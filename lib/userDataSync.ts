@@ -125,9 +125,9 @@ export async function fetchUserGameData(userId: string, isHardMode: boolean = fa
   }
 }
 
-// Sextillion cap: matches NUMERIC(24) in PostgreSQL (~10^24)
-// JS doubles lose precision past ~10^15 but game values don't need exact cents at Sextillion scale
-const SEXTILLION_CAP = 1e24;
+// Number cap: matches NUMERIC(48) in PostgreSQL (up to ~10^48)
+// JS doubles lose precision past ~10^15 but game values don't need exact cents at this scale
+const NUMBER_CAP = 1e45;
 
 // Check if a number is corrupt (NaN, Infinity, or not a number type)
 export function isCorruptNumber(value: unknown): boolean {
@@ -135,34 +135,34 @@ export function isCorruptNumber(value: unknown): boolean {
   return !Number.isFinite(value);
 }
 
-// Sanitize a number: clamp NaN/Infinity to fallback, cap at SEXTILLION_CAP
+// Sanitize a number: clamp NaN/Infinity to fallback, cap at NUMBER_CAP
 export function sanitizeNumber(value: unknown, fallback: number = 0): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
-  const safeValue = Math.min(Math.abs(value), SEXTILLION_CAP);
+  const safeValue = Math.min(Math.abs(value), NUMBER_CAP);
   return Math.floor(value >= 0 ? safeValue : -safeValue);
 }
 
-// Safe addition: prevents NaN/Infinity from propagating, caps at SEXTILLION_CAP
+// Safe addition: prevents NaN/Infinity from propagating, caps at NUMBER_CAP
 export function safeAdd(a: number, b: number): number {
   const result = a + b;
-  if (!Number.isFinite(result)) return SEXTILLION_CAP;
-  return Math.min(result, SEXTILLION_CAP);
+  if (!Number.isFinite(result)) return NUMBER_CAP;
+  return Math.min(result, NUMBER_CAP);
 }
 
-// Safe multiplication: prevents NaN/Infinity from propagating, caps at SEXTILLION_CAP
+// Safe multiplication: prevents NaN/Infinity from propagating, caps at NUMBER_CAP
 export function safeMul(a: number, b: number): number {
   const result = a * b;
-  if (!Number.isFinite(result)) return SEXTILLION_CAP;
-  return Math.min(Math.abs(result), SEXTILLION_CAP) * (result >= 0 ? 1 : -1);
+  if (!Number.isFinite(result)) return NUMBER_CAP;
+  return Math.min(Math.abs(result), NUMBER_CAP) * (result >= 0 ? 1 : -1);
 }
 
 // Safe money calculation: sanitize the final money amount (clamp NaN/Infinity/negative to 0)
 export function safeMoney(value: number): number {
   if (!Number.isFinite(value) || value < 0) return 0;
-  return Math.min(Math.floor(value), SEXTILLION_CAP);
+  return Math.min(Math.floor(value), NUMBER_CAP);
 }
 
-// Helper to safely convert large numbers for PostgreSQL NUMERIC(24)
+// Helper to safely convert large numbers for PostgreSQL NUMERIC(48)
 // Returns STRING for large numbers to avoid JS scientific notation (e.g. "1.23e+21")
 // which PostgreSQL cannot parse for bigint/numeric columns.
 function safeBigInt(value: number | undefined | null): string | number | null {
@@ -172,8 +172,8 @@ function safeBigInt(value: number | undefined | null): string | number | null {
     console.warn('⚠️ safeBigInt: Clamping corrupt number to 0:', value);
     return 0;
   }
-  // Cap at SEXTILLION_CAP to match NUMERIC(24) in the database
-  const safeValue = Math.min(Math.abs(value), SEXTILLION_CAP);
+  // Cap at NUMBER_CAP to match NUMERIC(48) in the database
+  const safeValue = Math.min(Math.abs(value), NUMBER_CAP);
   const result = Math.floor(value >= 0 ? safeValue : -safeValue);
   // For large numbers (>= 1e15), convert to string to prevent scientific notation
   // e.g. 1007984345771996600000 -> "1007984345771996600000" instead of "1.00798e+21"

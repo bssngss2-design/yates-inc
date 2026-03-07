@@ -14,6 +14,14 @@ interface TrinketShopModalProps {
 }
 
 function formatMoney(amount: number): string {
+  if (!isFinite(amount)) return '∞';
+  if (amount >= 1e42) return `${(amount / 1e42).toFixed(1)}Tr`;
+  if (amount >= 1e39) return `${(amount / 1e39).toFixed(1)}Dr`;
+  if (amount >= 1e36) return `${(amount / 1e36).toFixed(1)}Un`;
+  if (amount >= 1e33) return `${(amount / 1e33).toFixed(1)}Dc`;
+  if (amount >= 1e30) return `${(amount / 1e30).toFixed(1)}No`;
+  if (amount >= 1e27) return `${(amount / 1e27).toFixed(1)}Oc`;
+  if (amount >= 1e24) return `${(amount / 1e24).toFixed(1)}Sp`;
   if (amount >= 1e21) return `${(amount / 1e21).toFixed(1)}Sx`;
   if (amount >= 1e18) return `${(amount / 1e18).toFixed(1)}Qi`;
   if (amount >= 1e15) return `${(amount / 1e15).toFixed(1)}Q`;

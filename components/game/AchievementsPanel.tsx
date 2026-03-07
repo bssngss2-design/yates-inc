@@ -11,9 +11,10 @@ interface AchievementsPanelProps {
   setIsTrinketIndexOpen: (open: boolean) => void;
   forceOpen?: boolean;
   onForceOpenHandled?: () => void;
+  hidden?: boolean;
 }
 
-export default function AchievementsPanel({ isTrinketIndexOpen, setIsTrinketIndexOpen, forceOpen, onForceOpenHandled }: AchievementsPanelProps) {
+export default function AchievementsPanel({ isTrinketIndexOpen, setIsTrinketIndexOpen, forceOpen, onForceOpenHandled, hidden }: AchievementsPanelProps) {
   const { gameState, equipTitle, unequipTitle } = useGame();
   const [isAchievementsOpen, setIsAchievementsOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -79,23 +80,25 @@ export default function AchievementsPanel({ isTrinketIndexOpen, setIsTrinketInde
 
   return (
     <>
-      {/* Split button - Achievements & Trinket Index */}
-      <div className="flex rounded-lg overflow-hidden shadow-lg lg:w-full">
-        <button
-          onClick={() => setIsAchievementsOpen(true)}
-          className="flex items-center gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold transition-all border-r border-amber-800 flex-1 lg:flex-initial justify-center"
-        >
-          <span className="text-base sm:text-xl">🏆</span>
-          <span className="text-[10px] sm:text-sm">{unlockedCount}/{totalCount}</span>
-        </button>
-        <button
-          onClick={() => setIsTrinketIndexOpen(true)}
-          className="flex items-center gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold transition-all flex-1 lg:flex-initial justify-center"
-        >
-          <span className="text-base sm:text-xl">💎</span>
-          <span className="text-[10px] sm:text-sm">{trinketOwnedCount}/{trinketTotalCount}</span>
-        </button>
-      </div>
+      {/* Split button - Achievements & Trinket Index (hidden when accessed via bottom bar) */}
+      {!hidden && (
+        <div className="flex rounded-lg overflow-hidden shadow-lg lg:w-full">
+          <button
+            onClick={() => setIsAchievementsOpen(true)}
+            className="flex items-center gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold transition-all border-r border-amber-800 flex-1 lg:flex-initial justify-center"
+          >
+            <span className="text-base sm:text-xl">🏆</span>
+            <span className="text-[10px] sm:text-sm">{unlockedCount}/{totalCount}</span>
+          </button>
+          <button
+            onClick={() => setIsTrinketIndexOpen(true)}
+            className="flex items-center gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold transition-all flex-1 lg:flex-initial justify-center"
+          >
+            <span className="text-base sm:text-xl">💎</span>
+            <span className="text-[10px] sm:text-sm">{trinketOwnedCount}/{trinketTotalCount}</span>
+          </button>
+        </div>
+      )}
 
       {/* Achievements Modal - via portal */}
       {isAchievementsOpen && mounted && createPortal(

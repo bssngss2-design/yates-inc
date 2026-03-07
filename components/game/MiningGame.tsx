@@ -585,7 +585,6 @@ export default function MiningGame({ onExit }: MiningGameProps) {
               </button>
             )}
             <PrestigeButton />
-            <AchievementsPanel isTrinketIndexOpen={showTrinketIndex} setIsTrinketIndexOpen={setShowTrinketIndex} />
             <TrinketSlot />
           </div>
 
@@ -742,8 +741,8 @@ export default function MiningGame({ onExit }: MiningGameProps) {
             {/* Prestige Button */}
             <PrestigeButton />
 
-            {/* Achievements + Trinket Catalog — horizontal split button */}
-            <AchievementsPanel isTrinketIndexOpen={showTrinketIndex} setIsTrinketIndexOpen={setShowTrinketIndex} forceOpen={forceOpenAchievements} onForceOpenHandled={() => setForceOpenAchievements(false)} />
+            {/* Achievements (hidden here, accessible from bottom bar) */}
+            <AchievementsPanel isTrinketIndexOpen={showTrinketIndex} setIsTrinketIndexOpen={setShowTrinketIndex} forceOpen={forceOpenAchievements} onForceOpenHandled={() => setForceOpenAchievements(false)} hidden />
 
             <div className="h-px bg-gray-700/40" />
 
@@ -1061,6 +1060,15 @@ export default function MiningGame({ onExit }: MiningGameProps) {
             >
               <span className="text-lg">🏆</span>
               <span className="text-[10px] font-bold text-white uppercase tracking-wider">Achievments</span>
+            </button>
+
+            {/* Trinket Collection */}
+            <button
+              onClick={() => setShowTrinketIndex(true)}
+              className="flex h-14 w-28 flex-col items-center justify-center gap-0.5 rounded-lg border-r-4 border-b-4 border-purple-800 bg-purple-700 hover:bg-purple-600 active:border-r-0 active:border-b-0 active:translate-x-1 active:translate-y-1 transition-all"
+            >
+              <span className="text-lg">💎</span>
+              <span className="text-[10px] font-bold text-white uppercase tracking-wider">Trinkets</span>
             </button>
 
             {/* Ranking */}

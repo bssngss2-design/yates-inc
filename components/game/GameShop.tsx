@@ -70,6 +70,8 @@ export default function GameShop({ onClose }: GameShopProps) {
     giveTrinket,
     ownsTrinket,
     addPrestigeTokens,
+    addPrestigeCount,
+    skipRocks,
     addMoney,
     addMiners,
   } = useGame();
@@ -179,8 +181,14 @@ export default function GameShop({ onClose }: GameShopProps) {
     if (item.effect.type === 'give_autoclicker') {
       return gameState.hasAutoclicker;
     }
+    if (item.effect.type === 'give_building' && item.effect.buildingType) {
+      const bt = item.effect.buildingType;
+      if (bt === 'bank') return gameState.buildings.bank.owned;
+      if (bt === 'temple') return gameState.buildings.temple.owned;
+      if (bt === 'wizard_tower') return gameState.buildings.wizard_tower.owned;
+    }
     return false;
-  }, [ownsPickaxe, ownsTrinket, gameState.hasAutoclicker]);
+  }, [ownsPickaxe, ownsTrinket, gameState.hasAutoclicker, gameState.buildings]);
 
   const purchaseStoreItem = useCallback((item: StoreItem) => {
     if (!canAffordStore(item.price)) {
@@ -220,8 +228,18 @@ export default function GameShop({ onClose }: GameShopProps) {
         break;
       }
       case 'give_building': {
-        if (!spendStore(item.price)) return;
-        if (eff.buildingType) buyBuilding(eff.buildingType as 'mine' | 'bank' | 'factory' | 'temple' | 'wizard_tower' | 'shipment');
+        if (eff.buildingType) {
+          const bt = eff.buildingType;
+          // Check if already owned for max-1 buildings
+          if ((bt === 'bank' && gameState.buildings.bank.owned) ||
+              (bt === 'temple' && gameState.buildings.temple.owned) ||
+              (bt === 'wizard_tower' && gameState.buildings.wizard_tower.owned)) {
+            showToast(`Already own ${item.name}!`, 'error');
+            return;
+          }
+          if (!spendStore(item.price)) return;
+          buyBuilding(bt as 'mine' | 'bank' | 'factory' | 'temple' | 'wizard_tower' | 'shipment');
+        }
         showToast(`Built a ${item.name}!`, 'success');
         break;
       }
@@ -233,8 +251,8 @@ export default function GameShop({ onClose }: GameShopProps) {
       }
       case 'give_prestige': {
         if (!spendStore(item.price)) return;
-        addPrestigeTokens(0);
-        showToast('+1 Prestige! (no reset)', 'success');
+        addPrestigeCount(eff.amount || 1);
+        showToast(`+${eff.amount || 1} Prestige! (no reset)`, 'success');
         break;
       }
       case 'give_money': {
@@ -266,6 +284,7 @@ export default function GameShop({ onClose }: GameShopProps) {
       }
       case 'give_rock_skip': {
         if (!spendStore(item.price)) return;
+        skipRocks(eff.amount || 1);
         showToast(`Skipped ${eff.amount === -1 ? 'to max' : `+${eff.amount}`} rock!`, 'success');
         break;
       }
@@ -457,7 +476,7 @@ export default function GameShop({ onClose }: GameShopProps) {
               <span className="text-blue-300 text-[10px] ml-0.5">({gameState.stokens})</span>
             </button>
           )}
-          {(gameState.lotteryTickets > 0 || gameState.isHardMode) && (
+          {gameState.isHardMode && (
             <button
               onClick={() => { setActiveTab('lottery'); setStoreCategory('currency_exchange'); }}
               className={`flex-1 min-w-[60px] py-2 sm:py-3 font-bold transition-colors text-xs sm:text-sm touch-manipulation ${

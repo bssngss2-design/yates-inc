@@ -57,6 +57,8 @@ export default function CurrencyStore({ isOpen, onClose, currency }: CurrencySto
     ownsTrinket,
     buyBuilding,
     addPrestigeTokens,
+    addPrestigeCount,
+    skipRocks,
     addMoney,
     addMiners,
   } = useGame();
@@ -148,9 +150,16 @@ export default function CurrencyStore({ isOpen, onClose, currency }: CurrencySto
         break;
       }
       case 'give_building': {
-        if (!spend(item.price)) return;
         if (eff.buildingType) {
-          buyBuilding(eff.buildingType as 'mine' | 'bank' | 'factory' | 'temple' | 'wizard_tower' | 'shipment');
+          const bt = eff.buildingType;
+          if ((bt === 'bank' && gameState.buildings.bank.owned) ||
+              (bt === 'temple' && gameState.buildings.temple.owned) ||
+              (bt === 'wizard_tower' && gameState.buildings.wizard_tower.owned)) {
+            showToast(`Already own ${item.name}!`, 'error');
+            return;
+          }
+          if (!spend(item.price)) return;
+          buyBuilding(bt as 'mine' | 'bank' | 'factory' | 'temple' | 'wizard_tower' | 'shipment');
         }
         showToast(`Built a ${item.name}!`, 'success');
         break;
@@ -163,10 +172,8 @@ export default function CurrencyStore({ isOpen, onClose, currency }: CurrencySto
       }
       case 'give_prestige': {
         if (!spend(item.price)) return;
-        // Increment prestige without resetting
-        // This is handled by directly modifying state through addPrestigeTokens workaround
-        // Actually need to directly increment prestige count
-        addPrestigeTokens(0); // trigger a save
+        addPrestigeCount(eff.amount || 1);
+        showToast(`+${eff.amount || 1} Prestige! (no reset)`, 'success');
         // We need to use setGameState directly — not exposed, so let's add money equivalent
         showToast('+1 Prestige! (no reset)', 'success');
         break;
@@ -207,6 +214,7 @@ export default function CurrencyStore({ isOpen, onClose, currency }: CurrencySto
       }
       case 'give_rock_skip': {
         if (!spend(item.price)) return;
+        skipRocks(eff.amount || 1);
         showToast(`Skipped ${eff.amount === -1 ? 'to max' : `+${eff.amount}`} rock!`, 'success');
         break;
       }
@@ -217,11 +225,12 @@ export default function CurrencyStore({ isOpen, onClose, currency }: CurrencySto
       }
       case 'give_coupons': {
         if (!spend(item.price)) return;
-        showToast(`+${eff.amount} ${eff.couponType === 'discount30' ? '30%' : eff.couponType === 'discount50' ? '50%' : '100%'} coupons!`, 'success');
+        addLotteryTickets(eff.amount || 0);
+        showToast(`+${eff.amount} Lottery Tickets!`, 'success');
         break;
       }
     }
-  }, [canAfford, spend, currencyName, showToast, gameState, ownsPickaxe, ownsTrinket, buyPickaxe, giveTrinket, buyBuilding, addPrestigeTokens, addMoney, addMiners, addStokens, addLotteryTickets]);
+  }, [canAfford, spend, currencyName, showToast, gameState, ownsPickaxe, ownsTrinket, buyPickaxe, giveTrinket, buyBuilding, addPrestigeTokens, addPrestigeCount, skipRocks, addMoney, addMiners, addStokens, addLotteryTickets]);
 
   // Get display name for items
   const getItemDisplayName = (item: StoreItem): string => {

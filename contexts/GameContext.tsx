@@ -155,6 +155,8 @@ interface GameContextType {
   addMoney: (amount: number) => void;
   addMiners: (amount: number) => void;
   addPrestigeTokens: (amount: number) => void;
+  addPrestigeCount: (amount: number) => void;
+  skipRocks: (amount: number) => void;
   giveTrinket: (trinketId: string) => boolean;
   givePickaxe: (pickaxeId: number) => void;
   setTotalClicks: (clicks: number) => void;
@@ -2680,11 +2682,14 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         total_money_earned: gameState.totalMoneyEarned,
         // Persist stocks unlock across prestige
         has_stocks_unlocked: gameState.hasStocksUnlocked,
+        // Persist currencies across prestige
+        stokens: gameState.stokens + (newPrestigeCount % 5 === 0 ? 1 : 0),
+        lottery_tickets: gameState.lotteryTickets,
       });
     }
 
     return { amountToCompany, newMultiplier };
-  }, [canPrestige, gameState.yatesDollars, gameState.prestigeCount, gameState.prestigeMultiplier, gameState.ownedTrinketIds, gameState.equippedTrinketIds, gameState.prestigeTokens, gameState.gameStartTime, gameState.fastestPrestigeTime, gameState.totalMoneyEarned, gameState.hasStocksUnlocked, userId, userType]);
+  }, [canPrestige, gameState.yatesDollars, gameState.prestigeCount, gameState.prestigeMultiplier, gameState.ownedTrinketIds, gameState.equippedTrinketIds, gameState.prestigeTokens, gameState.stokens, gameState.lotteryTickets, gameState.gameStartTime, gameState.fastestPrestigeTime, gameState.totalMoneyEarned, gameState.hasStocksUnlocked, userId, userType]);
 
   // =====================
   // TRINKET FUNCTIONS
@@ -3146,6 +3151,43 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       ...prev,
       prestigeTokens: prev.prestigeTokens + amount,
     }));
+  }, []);
+
+  // Add prestige count without resetting (for store purchase)
+  const addPrestigeCount = useCallback((amount: number) => {
+    setGameState(prev => {
+      const newCount = prev.prestigeCount + amount;
+      const isPastMax = prev.prestigeCount >= MAX_PRESTIGE_WITH_BUFFS;
+      const newMultiplier = isPastMax ? prev.prestigeMultiplier : 1.0 + (newCount * 0.1);
+      return {
+        ...prev,
+        prestigeCount: newCount,
+        prestigeMultiplier: newMultiplier,
+      };
+    });
+  }, []);
+
+  // Skip rocks forward (for store purchase)
+  const skipRocks = useCallback((amount: number) => {
+    setGameState(prev => {
+      let targetRockId: number;
+      if (amount === -1) {
+        // Skip to max unlocked rock
+        const highest = getHighestUnlockedRock(prev.totalClicks);
+        targetRockId = highest.id;
+      } else {
+        targetRockId = Math.min(prev.currentRockId + amount, ROCKS[ROCKS.length - 1].id);
+      }
+      // Don't go backwards
+      if (targetRockId <= prev.currentRockId) return prev;
+      const targetRock = getRockById(targetRockId);
+      if (!targetRock) return prev;
+      return {
+        ...prev,
+        currentRockId: targetRockId,
+        currentRockHP: getScaledRockHP(targetRock.clicksToBreak, prev.prestigeCount, prev.isHardMode),
+      };
+    });
   }, []);
 
   const giveTrinket = useCallback((trinketId: string) => {
@@ -4834,6 +4876,8 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         addMoney,
         addMiners,
         addPrestigeTokens,
+        addPrestigeCount,
+        skipRocks,
         giveTrinket,
         givePickaxe,
         setTotalClicks,

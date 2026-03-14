@@ -165,8 +165,9 @@ export function safeMoney(value: number): number {
 // Helper to safely convert large numbers for PostgreSQL NUMERIC(48)
 // Returns STRING for large numbers to avoid JS scientific notation (e.g. "1.23e+21")
 // which PostgreSQL cannot parse for bigint/numeric columns.
-function safeBigInt(value: number | undefined | null): string | number | null {
-  if (value === undefined || value === null) return null;
+function safeBigInt(value: number | undefined | null): string | number | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
   if (!Number.isFinite(value)) {
     // NaN or Infinity - clamp to 0 instead of returning null (prevents DB corruption)
     console.warn('⚠️ safeBigInt: Clamping corrupt number to 0:', value);
@@ -183,11 +184,21 @@ function safeBigInt(value: number | undefined | null): string | number | null {
   return result;
 }
 
+// Strip keys whose value is undefined so partial saves don't overwrite
+// existing DB values with null. Keys explicitly set to null are kept.
+function stripUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
+  const result: Record<string, unknown> = {};
+  for (const key of Object.keys(obj)) {
+    if (obj[key] !== undefined) result[key] = obj[key];
+  }
+  return result as Partial<T>;
+}
+
 // Save/update user game data to Supabase
 export async function saveUserGameData(data: Partial<UserGameData> & { user_id: string; user_type: 'employee' | 'client' }, versionAtCallTime?: number, isHardMode: boolean = false): Promise<boolean> {
   try {
     const tableName = getTableName(isHardMode);
-    const fullData = {
+    const fullData = stripUndefined({
       user_id: data.user_id,
       user_type: data.user_type,
       yates_dollars: safeBigInt(data.yates_dollars),
@@ -230,20 +241,14 @@ export async function saveUserGameData(data: Partial<UserGameData> & { user_id: 
       owned_title_ids: data.owned_title_ids,
       equipped_title_ids: data.equipped_title_ids,
       title_win_counts: data.title_win_counts,
-      // Path system
       chosen_path: data.chosen_path,
-      // Tax system
       last_tax_time: safeBigInt(data.last_tax_time),
-      // Playtime tracking
       total_playtime_seconds: safeBigInt(data.total_playtime_seconds),
-      // Premium products - only include if the array has items (avoid schema issues)
       ...(data.owned_premium_product_ids?.length ? { owned_premium_product_ids: data.owned_premium_product_ids } : {}),
-      // Buildings data (bank, factory, temple, etc.) - stored as JSON string
       ...(data.buildings_data ? { buildings_data: data.buildings_data } : {}),
-      // Stokens & Lottery Tickets
-      stokens: data.stokens ?? 0,
-      lottery_tickets: data.lottery_tickets ?? 0,
-    };
+      stokens: data.stokens,
+      lottery_tickets: data.lottery_tickets,
+    });
 
     // FINAL CHECK: If version was provided and has changed, skip this save (a force save happened)
     // This check happens RIGHT BEFORE the DB call to catch race conditions
@@ -551,8 +556,7 @@ export function keepaliveSave(data: Partial<UserGameData> & { user_id: string; u
     return;
   }
 
-  // Apply safeBigInt to ALL numeric fields (prevents NaN/Infinity from being JSON-stringified to null)
-  const fullData = {
+  const fullData = stripUndefined({
     user_id: data.user_id,
     user_type: data.user_type,
     yates_dollars: safeBigInt(data.yates_dollars),
@@ -595,19 +599,13 @@ export function keepaliveSave(data: Partial<UserGameData> & { user_id: string; u
     owned_title_ids: data.owned_title_ids,
     equipped_title_ids: data.equipped_title_ids,
     title_win_counts: data.title_win_counts,
-    // Path system
     chosen_path: data.chosen_path,
-    // Tax system
     last_tax_time: safeBigInt(data.last_tax_time),
-    // Playtime tracking
     total_playtime_seconds: safeBigInt(data.total_playtime_seconds),
-    // Premium products - only include if the array has items
     ...(data.owned_premium_product_ids?.length ? { owned_premium_product_ids: data.owned_premium_product_ids } : {}),
-    // Buildings data
     ...(data.buildings_data ? { buildings_data: data.buildings_data } : {}),
-    // Stokens & Lottery Tickets
-    stokens: data.stokens ?? 0,
-    lottery_tickets: data.lottery_tickets ?? 0,
+    stokens: data.stokens,
+    lottery_tickets: data.lottery_tickets,
   };
 
   // Use correct table based on game mode (was hardcoded to user_game_data before - corrupted hard mode players!)

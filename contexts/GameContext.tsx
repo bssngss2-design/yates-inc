@@ -1896,92 +1896,75 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     }
   }, [gameState, shopStock, isLoaded, userId, userType]);
 
+  // Build the full save payload from a GameState snapshot — single source
+  // of truth used by both keepalive handlers so no fields are ever missed.
+  const buildSavePayload = (state: GameState, uid: string, utype: 'employee' | 'client') => ({
+    user_id: uid,
+    user_type: utype,
+    yates_dollars: state.yatesDollars,
+    total_clicks: state.totalClicks,
+    current_pickaxe_id: state.currentPickaxeId,
+    current_rock_id: state.currentRockId,
+    current_rock_hp: state.currentRockHP,
+    rocks_mined_count: state.rocksMinedCount,
+    owned_pickaxe_ids: state.ownedPickaxeIds,
+    coupons_30: state.coupons.discount30,
+    coupons_50: state.coupons.discount50,
+    coupons_100: state.coupons.discount100,
+    has_seen_cutscene: state.hasSeenCutscene,
+    has_autoclicker: state.hasAutoclicker,
+    autoclicker_enabled: state.autoclickerEnabled,
+    prestige_count: state.prestigeCount,
+    prestige_multiplier: state.prestigeMultiplier,
+    anti_cheat_warnings: state.antiCheatWarnings,
+    is_on_watchlist: state.isOnWatchlist,
+    is_blocked: state.isBlocked,
+    appeal_pending: state.appealPending,
+    owned_trinket_ids: state.ownedTrinketIds,
+    equipped_trinket_ids: state.equippedTrinketIds,
+    trinket_shop_items: state.trinketShopItems,
+    trinket_shop_last_refresh: state.trinketShopLastRefresh,
+    has_totem_protection: state.hasTotemProtection,
+    has_stocks_unlocked: state.hasStocksUnlocked,
+    owned_relic_ids: state.ownedRelicIds,
+    owned_talisman_ids: state.ownedTalismanIds,
+    miner_count: state.minerCount,
+    miner_last_tick: state.minerLastTick,
+    prestige_tokens: state.prestigeTokens,
+    owned_prestige_upgrade_ids: state.ownedPrestigeUpgradeIds,
+    auto_prestige_enabled: state.autoPrestigeEnabled,
+    unlocked_achievement_ids: state.unlockedAchievementIds,
+    total_money_earned: state.totalMoneyEarned,
+    game_start_time: state.gameStartTime,
+    fastest_prestige_time: state.fastestPrestigeTime,
+    owned_title_ids: state.ownedTitleIds,
+    equipped_title_ids: state.equippedTitleIds,
+    title_win_counts: state.titleWinCounts,
+    chosen_path: state.chosenPath,
+    last_tax_time: state.lastTaxTime,
+    total_playtime_seconds: state.totalPlaytimeSeconds,
+    ...(state.ownedPremiumProductIds?.length ? { owned_premium_product_ids: state.ownedPremiumProductIds } : {}),
+    buildings_data: JSON.stringify(state.buildings),
+    stokens: state.stokens,
+    lottery_tickets: state.lotteryTickets,
+  });
+
   // Save immediately when page is about to unload or tab is hidden
   useEffect(() => {
     if (!userId || !userType) return;
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
-        // Try async flush first
         flushPendingData();
-        // Also fire keepalive save as backup with current state
         const state = unloadGameStateRef.current;
-        keepaliveSave({
-          user_id: userId,
-          user_type: userType,
-          yates_dollars: state.yatesDollars,
-          total_clicks: state.totalClicks,
-          current_pickaxe_id: state.currentPickaxeId,
-          current_rock_id: state.currentRockId,
-          current_rock_hp: state.currentRockHP,
-          rocks_mined_count: state.rocksMinedCount,
-          owned_pickaxe_ids: state.ownedPickaxeIds,
-          coupons_30: state.coupons.discount30,
-          coupons_50: state.coupons.discount50,
-          coupons_100: state.coupons.discount100,
-          has_seen_cutscene: state.hasSeenCutscene,
-          has_autoclicker: state.hasAutoclicker,
-          autoclicker_enabled: state.autoclickerEnabled,
-          prestige_count: state.prestigeCount,
-          prestige_multiplier: state.prestigeMultiplier,
-          miner_count: state.minerCount,
-          prestige_tokens: state.prestigeTokens,
-          owned_prestige_upgrade_ids: state.ownedPrestigeUpgradeIds,
-          owned_trinket_ids: state.ownedTrinketIds,
-          equipped_trinket_ids: state.equippedTrinketIds,
-          total_money_earned: state.totalMoneyEarned,
-          unlocked_achievement_ids: state.unlockedAchievementIds,
-          owned_title_ids: state.ownedTitleIds,
-          equipped_title_ids: state.equippedTitleIds,
-          has_stocks_unlocked: state.hasStocksUnlocked,
-          // Path system
-          chosen_path: state.chosenPath,
-          // Playtime tracking
-          total_playtime_seconds: state.totalPlaytimeSeconds,
-        }, state.isHardMode);
+        keepaliveSave(buildSavePayload(state, userId, userType), state.isHardMode);
       }
     };
 
     const handleBeforeUnload = () => {
-      // Try async flush (may not complete)
       flushPendingData();
-      // Fire keepalive save - this survives page unload
       const state = unloadGameStateRef.current;
-      keepaliveSave({
-        user_id: userId,
-        user_type: userType,
-        yates_dollars: state.yatesDollars,
-        total_clicks: state.totalClicks,
-        current_pickaxe_id: state.currentPickaxeId,
-        current_rock_id: state.currentRockId,
-        current_rock_hp: state.currentRockHP,
-        rocks_mined_count: state.rocksMinedCount,
-        owned_pickaxe_ids: state.ownedPickaxeIds,
-        coupons_30: state.coupons.discount30,
-        coupons_50: state.coupons.discount50,
-        coupons_100: state.coupons.discount100,
-        has_seen_cutscene: state.hasSeenCutscene,
-        has_autoclicker: state.hasAutoclicker,
-        autoclicker_enabled: state.autoclickerEnabled,
-        prestige_count: state.prestigeCount,
-        prestige_multiplier: state.prestigeMultiplier,
-        miner_count: state.minerCount,
-        prestige_tokens: state.prestigeTokens,
-        owned_prestige_upgrade_ids: state.ownedPrestigeUpgradeIds,
-        owned_trinket_ids: state.ownedTrinketIds,
-        equipped_trinket_ids: state.equippedTrinketIds,
-        total_money_earned: state.totalMoneyEarned,
-        unlocked_achievement_ids: state.unlockedAchievementIds,
-        owned_title_ids: state.ownedTitleIds,
-        equipped_title_ids: state.equippedTitleIds,
-        has_stocks_unlocked: state.hasStocksUnlocked,
-        // Path system
-        chosen_path: state.chosenPath,
-        // Tax system
-        last_tax_time: state.lastTaxTime,
-        // Playtime tracking
-        total_playtime_seconds: state.totalPlaytimeSeconds,
-      }, state.isHardMode);
+      keepaliveSave(buildSavePayload(state, userId, userType), state.isHardMode);
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);

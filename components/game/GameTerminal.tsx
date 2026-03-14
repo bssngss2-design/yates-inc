@@ -48,7 +48,7 @@ export default function GameTerminal({ isOpen, onClose, onMine }: GameTerminalPr
   const terminalRef = useRef<HTMLDivElement>(null);
   const cmIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
-  const { gameState, resetGame, buyPickaxe, equipPickaxe, prestige, dismissWarning, clearClickHistory, addMoney, addMiners, addPrestigeTokens, giveTrinket, givePickaxe, setTotalClicks, toggleAutoPrestige, giveTitle, equipTitle, unlockAllAchievements, selectPath, maxAll, spawnWanderingTrader, addStokens } = useGame();
+  const { gameState, resetGame, buyPickaxe, equipPickaxe, prestige, dismissWarning, clearClickHistory, addMoney, addMiners, addPrestigeTokens, giveTrinket, givePickaxe, setTotalClicks, toggleAutoPrestige, giveTitle, equipTitle, unlockAllAchievements, selectPath, maxAll, giveAllTrinkets, spawnWanderingTrader, addStokens } = useGame();
   const { employee } = useAuth();
   const { client } = useClient();
   
@@ -682,6 +682,7 @@ export default function GameTerminal({ isOpen, onClose, onMine }: GameTerminalPr
         addToHistory('banned         - List all banned');
         addToHistory('wt.spwn        - Spawn Wandering Trader 🧙');
         addToHistory('stks [amt]     - Give yourself Stokens 💎');
+        addToHistory('alltrinkets    - All trinkets + relics + talismans 💍');
       } else if (isEmployee) {
         addToHistory('');
         addToHistory('🔒 BAN COMMANDS (Employees only - no guests):');
@@ -974,6 +975,15 @@ export default function GameTerminal({ isOpen, onClose, onMine }: GameTerminalPr
       } else {
         giveTrinket(trinketId);
         addToHistory(`💍 Gave trinket: ${trinket.name}`);
+      }
+    }
+    else if (trimmed === 'alltrinkets') {
+      if (!isBanAdmin) {
+        addToHistory('❌ Admin only command.');
+      } else {
+        giveAllTrinkets();
+        addToHistory('💍 Gave ALL trinkets, relics, and talismans.');
+        addToHistory(`   ${TRINKETS.length} trinkets + ${TRINKETS.length} relics + ${TRINKETS.length} talismans = ${TRINKETS.length * 3} items`);
       }
     }
     // Prestige tokens command (admin or authenticated guest)

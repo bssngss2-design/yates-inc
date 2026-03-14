@@ -25,6 +25,7 @@ import {
   FACTORY_BONUS_MINERS, generateFactoryBuff, getNextFactoryBuffTime,
   FACTORY_BUFF_MIN_INTERVAL, FACTORY_BUFF_MAX_INTERVAL, FACTORY_BUFF_REDUCTION_PER_FACTORY,
   BANK_BASE_INTEREST_RATE, BANK_TIME_MULTIPLIER, calculateBankInterest,
+  BANK_TIERS, BANK_MAX_TIER, getBankDepositCap, getBankTierForAmount,
   TEMPLE_MINER_MONEY_MULTIPLIER, TEMPLE_BUFF_INTERVAL_MIN, TEMPLE_BUFF_INTERVAL_MAX,
   getProgressiveUpgradeCost, getProgressiveUpgradeBonus,
   generateShipmentDelivery,
@@ -162,6 +163,7 @@ interface GameContextType {
   setTotalClicks: (clicks: number) => void;
   unlockAllAchievements: () => void;
   maxAll: () => void; // Admin command - max out everything
+  giveAllTrinkets: () => void;
   // Title functions
   giveTitle: (titleId: string) => boolean;
   equipTitle: (titleId: string) => boolean;
@@ -200,6 +202,7 @@ interface GameContextType {
   depositToBank: (amount: number) => boolean;
   withdrawFromBank: () => { principal: number; interest: number } | null;
   getBankBalance: () => { principal: number; interest: number; totalTime: number };
+  unlockBankTier: () => boolean;
   // Factory functions
   getFactoryBonusMiners: () => number;
   // Temple functions (Light path)
@@ -578,7 +581,25 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
             loadedState.currentRockHP = maxHP;
           }
           setGameState(loadedState);
-          
+
+          // Bank tier migration for localStorage-only loads (guests / Supabase offline)
+          if (loadedState.buildings?.bank?.owned && loadedState.buildings.bank.bankTier === undefined) {
+            setGameState(prev => {
+              const bank = prev.buildings.bank;
+              if (bank.bankTier !== undefined && bank.bankTier !== null) return prev;
+              if (!bank.owned || bank.depositAmount <= 0) {
+                return { ...prev, buildings: { ...prev.buildings, bank: { ...bank, bankTier: 0 } } };
+              }
+              const currentAmountTier = getBankTierForAmount(bank.depositAmount);
+              const grantedTier = Math.max(0, currentAmountTier - 1);
+              const cap = getBankDepositCap(grantedTier);
+              return {
+                ...prev,
+                buildings: { ...prev.buildings, bank: { ...bank, bankTier: grantedTier, depositAmount: Math.min(bank.depositAmount, cap) } },
+              };
+            });
+          }
+
           if (parsed.shopStock) {
             const timeSinceRestock = Date.now() - parsed.shopStock.lastRestockTime;
             if (timeSinceRestock >= SHOP_RESTOCK_INTERVAL) {
@@ -852,6 +873,35 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
                 ...prev,
                 lotteryTickets: (prev.lotteryTickets || 0) + totalCoupons,
                 coupons: { discount30: 0, discount50: 0, discount100: 0 },
+              };
+            });
+
+            // Bank tier migration — existing players without bankTier get the
+            // tier BEFORE their deposit range, and deposits are clamped to that cap.
+            setGameState(prev => {
+              const bank = prev.buildings.bank;
+              if (bank.bankTier !== undefined && bank.bankTier !== null) return prev;
+
+              if (!bank.owned || bank.depositAmount <= 0) {
+                return {
+                  ...prev,
+                  buildings: { ...prev.buildings, bank: { ...bank, bankTier: 0 } },
+                };
+              }
+
+              const currentAmountTier = getBankTierForAmount(bank.depositAmount);
+              const grantedTier = Math.max(0, currentAmountTier - 1);
+              const cap = getBankDepositCap(grantedTier);
+              return {
+                ...prev,
+                buildings: {
+                  ...prev.buildings,
+                  bank: {
+                    ...bank,
+                    bankTier: grantedTier,
+                    depositAmount: Math.min(bank.depositAmount, cap),
+                  },
+                },
               };
             });
           } catch {
@@ -3238,6 +3288,18 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     }));
   }, []);
 
+  const giveAllTrinkets = useCallback(() => {
+    const allBaseIds = TRINKETS.map(t => t.id);
+    const allRelicIds = allBaseIds.map(id => `${id}_relic`);
+    const allTalismanIds = allBaseIds.map(id => `${id}_talisman`);
+    setGameState(prev => ({
+      ...prev,
+      ownedTrinketIds: [...new Set([...prev.ownedTrinketIds, ...allBaseIds])],
+      ownedRelicIds: [...new Set([...(prev.ownedRelicIds || []), ...allRelicIds])],
+      ownedTalismanIds: [...new Set([...(prev.ownedTalismanIds || []), ...allTalismanIds])],
+    }));
+  }, []);
+
   // =====================
   // TITLE FUNCTIONS
   // =====================
@@ -3686,18 +3748,45 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
   // Bank functions
   const depositToBank = useCallback((amount: number): boolean => {
     if (!gameState.buildings.bank.owned) return false;
-    if (gameState.buildings.bank.depositAmount > 0) return false; // Already has deposit
+    if (gameState.buildings.bank.depositAmount > 0) return false;
     if (amount <= 0 || amount > gameState.yatesDollars) return false;
+
+    const cap = getBankDepositCap(gameState.buildings.bank.bankTier ?? 0);
+    const clampedAmount = Math.min(amount, cap);
+    if (clampedAmount <= 0) return false;
 
     setGameState(prev => ({
       ...prev,
-      yatesDollars: prev.yatesDollars - amount,
+      yatesDollars: prev.yatesDollars - clampedAmount,
       buildings: {
         ...prev.buildings,
         bank: {
           ...prev.buildings.bank,
-          depositAmount: amount,
+          depositAmount: clampedAmount,
           depositTimestamp: Date.now(),
+        },
+      },
+    }));
+
+    return true;
+  }, [gameState.buildings.bank, gameState.yatesDollars]);
+
+  const unlockBankTier = useCallback((): boolean => {
+    if (!gameState.buildings.bank.owned) return false;
+    const currentTier = gameState.buildings.bank.bankTier ?? 0;
+    const nextTier = currentTier + 1;
+    if (nextTier > BANK_MAX_TIER) return false;
+    const cost = BANK_TIERS[nextTier].unlockCost;
+    if (gameState.yatesDollars < cost) return false;
+
+    setGameState(prev => ({
+      ...prev,
+      yatesDollars: prev.yatesDollars - cost,
+      buildings: {
+        ...prev.buildings,
+        bank: {
+          ...prev.buildings.bank,
+          bankTier: nextTier,
         },
       },
     }));
@@ -4883,6 +4972,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         setTotalClicks,
         unlockAllAchievements,
         maxAll,
+        giveAllTrinkets,
         // Title functions
         giveTitle,
         equipTitle,
@@ -4912,6 +5002,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         depositToBank,
         withdrawFromBank,
         getBankBalance,
+        unlockBankTier,
         getFactoryBonusMiners,
         buyTempleUpgrade,
         equipTempleRank,

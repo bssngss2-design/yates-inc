@@ -1454,6 +1454,7 @@ export interface BankState {
   depositAmount: number;
   depositTimestamp: number | null; // When deposit was made
   lastInterestClaim: number | null; // When interest was last claimed
+  bankTier: number; // 0-11, controls max deposit cap
 }
 
 // Factory: +10 miners each, random buffs
@@ -1728,6 +1729,44 @@ export const BANK_COST_PERCENTAGE_MAX = 0.70; // 70% of current money
 export const BANK_BASE_INTEREST_RATE = 0.001; // 0.1% per minute base
 export const BANK_TIME_MULTIPLIER = 0.0001; // Interest increases with time
 
+export interface BankTierDef {
+  label: string;
+  unlockCost: number;
+  maxDeposit: number; // Infinity for the final tier
+}
+
+export const BANK_TIERS: BankTierDef[] = [
+  { label: '1K - 999K',  unlockCost: 10_000,                    maxDeposit: 999_999 },
+  { label: '1M+',        unlockCost: 10_000_000,                maxDeposit: 999_999_999 },
+  { label: '1B+',        unlockCost: 15_000_000_000,            maxDeposit: 999_999_999_999 },
+  { label: '1T+',        unlockCost: 20_000_000_000_000,        maxDeposit: 999_999_999_999_999 },
+  { label: '1Q+',        unlockCost: 3e15,                      maxDeposit: 999e15 },
+  { label: '1Qi+',       unlockCost: 5e18,                      maxDeposit: 999e18 },
+  { label: '1Sx+',       unlockCost: 500e18,                    maxDeposit: 999e21 },
+  { label: '1Sp+',       unlockCost: 500e21,                    maxDeposit: 999e24 },
+  { label: '1Oc+',       unlockCost: 700e24,                    maxDeposit: 999e27 },
+  { label: '1No+',       unlockCost: 800e27,                    maxDeposit: 999e30 },
+  { label: '1Dc+',       unlockCost: 880e30,                    maxDeposit: 999e33 },
+  { label: '1Tr+',       unlockCost: 999e33,                    maxDeposit: Infinity },
+];
+
+export const BANK_MAX_TIER = BANK_TIERS.length - 1;
+
+export function getBankDepositCap(tier: number): number {
+  if (tier < 0) return BANK_TIERS[0].maxDeposit;
+  if (tier > BANK_MAX_TIER) return Infinity;
+  return BANK_TIERS[tier].maxDeposit;
+}
+
+export function getBankTierForAmount(amount: number): number {
+  for (let i = BANK_TIERS.length - 1; i >= 0; i--) {
+    if (i === 0) return 0;
+    const prevCap = BANK_TIERS[i - 1].maxDeposit;
+    if (amount > prevCap) return i;
+  }
+  return 0;
+}
+
 // Factory constants
 export const FACTORY_BONUS_MINERS = 10;
 export const FACTORY_BUFF_MIN_INTERVAL = 600000; // 10 minutes base
@@ -1963,6 +2002,7 @@ export function getDefaultBuildingStates(): BuildingStates {
       depositAmount: 0,
       depositTimestamp: null,
       lastInterestClaim: null,
+      bankTier: 0,
     },
     factory: {
       count: 0,

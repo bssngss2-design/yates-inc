@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Image from 'next/image';
 import { useGame } from '@/contexts/GameContext';
-import { BANK_BASE_INTEREST_RATE, TRINKETS } from '@/types/game';
+import { BANK_BASE_INTEREST_RATE, BANK_TIERS, BANK_MAX_TIER, getBankDepositCap, TRINKETS } from '@/types/game';
 
 interface BankModalProps {
   onClose: () => void;
@@ -15,11 +15,11 @@ export default function BankModal({ onClose }: BankModalProps) {
     depositToBank, 
     withdrawFromBank, 
     getBankBalance,
+    unlockBankTier,
   } = useGame();
   
   const [depositPercent, setDepositPercent] = useState(50);
 
-  // Calculate bank interest multiplier from equipped trinkets
   const getBankInterestMultiplier = (): number => {
     let multiplier = 1;
     for (const trinketId of gameState.equippedTrinketIds) {
@@ -55,13 +55,23 @@ export default function BankModal({ onClose }: BankModalProps) {
   };
 
   const bankState = gameState.buildings.bank;
+  const currentTier = bankState.bankTier ?? 0;
+  const depositCap = getBankDepositCap(currentTier);
+  const isMaxTier = currentTier > BANK_MAX_TIER;
+  const hasNextTier = currentTier < BANK_MAX_TIER;
+  const nextTierDef = hasNextTier ? BANK_TIERS[currentTier + 1] : null;
+
   const bankBalance = getBankBalance();
   const depositAmount = bankBalance.principal;
   const interest = bankBalance.interest;
   const currentBalance = depositAmount + interest;
-  const depositValue = Math.floor(gameState.yatesDollars * (depositPercent / 100));
 
-  // Calculate time since deposit
+  const rawDepositValue = Math.floor(gameState.yatesDollars * (depositPercent / 100));
+  const depositValue = isMaxTier ? rawDepositValue : Math.min(rawDepositValue, depositCap);
+  const isDepositCapped = !isMaxTier && rawDepositValue > depositCap;
+
+  const canAffordNextTier = nextTierDef ? gameState.yatesDollars >= nextTierDef.unlockCost : false;
+
   const getTimeSinceDeposit = () => {
     if (!bankState.depositTimestamp) return 'N/A';
     const elapsed = Date.now() - bankState.depositTimestamp;
@@ -73,14 +83,12 @@ export default function BankModal({ onClose }: BankModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* Backdrop */}
       <div 
         className="absolute inset-0 bg-black/80 backdrop-blur-sm"
         onClick={onClose}
       />
 
-      {/* Modal */}
-      <div className="relative bg-gradient-to-br from-emerald-900/90 to-teal-900/90 rounded-2xl w-full max-w-md max-h-[85vh] overflow-hidden border-2 border-emerald-500/50 shadow-2xl">
+      <div className="relative bg-gradient-to-br from-emerald-900/90 to-teal-900/90 rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto border-2 border-emerald-500/50 shadow-2xl">
         {/* Header */}
         <div className="bg-gradient-to-r from-emerald-600 to-teal-500 px-6 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
@@ -107,8 +115,21 @@ export default function BankModal({ onClose }: BankModalProps) {
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-6 space-y-6">
+        <div className="p-6 space-y-5">
+          {/* Deposit Cap / Tier Status */}
+          <div className="bg-black/30 rounded-xl p-4 border border-cyan-600/30">
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-cyan-400 font-bold text-sm">📊 Deposit Limit</span>
+              <span className="text-xs text-gray-500">Tier {currentTier}/{BANK_TIERS.length}</span>
+            </div>
+            <div className="text-xl font-bold text-white">
+              {isMaxTier || depositCap === Infinity ? 'Unlimited' : `$${formatNumber(depositCap)}`}
+            </div>
+            {isMaxTier && (
+              <p className="text-emerald-400 text-xs mt-1">All tiers unlocked — no deposit cap.</p>
+            )}
+          </div>
+
           {/* Current Balance */}
           <div className="bg-black/30 rounded-xl p-4 border border-emerald-600/30">
             <h3 className="text-emerald-400 font-bold mb-3">💰 Account Balance</h3>
@@ -139,12 +160,11 @@ export default function BankModal({ onClose }: BankModalProps) {
             </div>
           </div>
 
-          {/* Deposit Section */}
+          {/* Deposit / Withdraw Section */}
           {depositAmount === 0 ? (
             <div className="space-y-4">
               <h3 className="text-white font-bold">Make a Deposit</h3>
               
-              {/* Slider */}
               <div className="space-y-2">
                 <input
                   type="range"
@@ -156,7 +176,10 @@ export default function BankModal({ onClose }: BankModalProps) {
                 />
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-400">{depositPercent}% of your cash</span>
-                  <span className="text-emerald-400">${formatNumber(depositValue)}</span>
+                  <span className={isDepositCapped ? 'text-orange-400' : 'text-emerald-400'}>
+                    ${formatNumber(depositValue)}
+                    {isDepositCapped && ' (capped)'}
+                  </span>
                 </div>
               </div>
 
@@ -179,6 +202,30 @@ export default function BankModal({ onClose }: BankModalProps) {
               <p className="text-gray-400 text-xs text-center">
                 Leave your money longer for more interest!
               </p>
+            </div>
+          )}
+
+          {/* Next Tier Unlock */}
+          {hasNextTier && nextTierDef && (
+            <div className="bg-black/30 rounded-xl p-4 border border-purple-600/30">
+              <h3 className="text-purple-400 font-bold text-sm mb-2">🔓 Upgrade Deposit Limit</h3>
+              <div className="flex justify-between items-center mb-3">
+                <div>
+                  <span className="text-white text-sm">Unlock </span>
+                  <span className="text-cyan-300 font-bold">{nextTierDef.label}</span>
+                  <span className="text-gray-400 text-xs block mt-0.5">
+                    Cap → ${formatNumber(nextTierDef.maxDeposit === Infinity ? Infinity : nextTierDef.maxDeposit)}
+                  </span>
+                </div>
+                <span className="text-yellow-400 font-bold">${formatNumber(nextTierDef.unlockCost)}</span>
+              </div>
+              <button
+                onClick={() => unlockBankTier()}
+                disabled={!canAffordNextTier}
+                className="w-full py-2.5 rounded-lg font-bold text-sm bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {canAffordNextTier ? `Upgrade — $${formatNumber(nextTierDef.unlockCost)}` : `Need $${formatNumber(nextTierDef.unlockCost)}`}
+              </button>
             </div>
           )}
 

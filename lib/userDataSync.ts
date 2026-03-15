@@ -606,7 +606,7 @@ export function keepaliveSave(data: Partial<UserGameData> & { user_id: string; u
     ...(data.buildings_data ? { buildings_data: data.buildings_data } : {}),
     stokens: data.stokens,
     lottery_tickets: data.lottery_tickets,
-  };
+  });
 
   // Use correct table based on game mode (was hardcoded to user_game_data before - corrupted hard mode players!)
   const tableName = getTableName(isHardMode);

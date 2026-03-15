@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '@/contexts/GameContext';
 
@@ -13,13 +13,22 @@ export default function GameSettings({ isOpen, onClose }: GameSettingsProps) {
   const {
     gameState,
     toggleAutoclicker,
+    saveNow,
   } = useGame();
 
   const [mounted, setMounted] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  const handleSaveNow = useCallback(async () => {
+    setSaveStatus('saving');
+    const ok = await saveNow();
+    setSaveStatus(ok ? 'saved' : 'failed');
+    setTimeout(() => setSaveStatus('idle'), 2000);
+  }, [saveNow]);
 
   if (!mounted || !isOpen) return null;
 
@@ -140,6 +149,42 @@ export default function GameSettings({ isOpen, onClose }: GameSettingsProps) {
             </div>
           </div>
 
+          {/* Save */}
+          <div>
+            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Data</h3>
+            <div className="space-y-2">
+              <div className="p-2.5 bg-gray-800/50 rounded-lg border border-gray-700/30">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-white text-sm font-medium">💾 Save Game</span>
+                    <p className="text-gray-500 text-[10px]">Force save to cloud right now</p>
+                  </div>
+                  <button
+                    onClick={handleSaveNow}
+                    disabled={saveStatus === 'saving'}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      saveStatus === 'saving'
+                        ? 'bg-gray-600 text-gray-400 cursor-wait'
+                        : saveStatus === 'saved'
+                        ? 'bg-emerald-600 text-white'
+                        : saveStatus === 'failed'
+                        ? 'bg-red-600 text-white'
+                        : 'bg-cyan-600 hover:bg-cyan-500 text-white'
+                    }`}
+                  >
+                    {saveStatus === 'saving' ? 'Saving...' :
+                     saveStatus === 'saved' ? 'Saved!' :
+                     saveStatus === 'failed' ? 'Failed!' :
+                     'Save Now'}
+                  </button>
+                </div>
+                <p className="text-gray-600 text-[9px] mt-1.5">
+                  Auto-saves every 8s · Press <kbd className="bg-gray-700 text-gray-400 px-1 py-0.5 rounded text-[9px] font-mono">Q Q</kbd> to quick save
+                </p>
+              </div>
+            </div>
+          </div>
+
           {/* Keyboard Shortcuts */}
           <div>
             <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Keyboard Shortcuts</h3>
@@ -159,6 +204,10 @@ export default function GameSettings({ isOpen, onClose }: GameSettingsProps) {
               <div className="flex justify-between text-xs">
                 <span className="text-gray-400">Mine</span>
                 <kbd className="bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded text-[10px] font-mono">+</kbd>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-400">Quick Save</span>
+                <kbd className="bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded text-[10px] font-mono">Q Q</kbd>
               </div>
             </div>
           </div>

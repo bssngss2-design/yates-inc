@@ -322,8 +322,8 @@ export async function savePurchase(purchase: UserPurchase): Promise<boolean> {
 }
 
 // Throttled save - saves at most every SAVE_INTERVAL ms
-const BASE_SAVE_INTERVAL = 3000; // Save every 3 seconds normally
-const ACTIVE_SAVE_INTERVAL = 4000; // Save every 4 seconds when autoclicker/miners active
+const BASE_SAVE_INTERVAL = 8000; // Save every 8 seconds normally
+const ACTIVE_SAVE_INTERVAL = 8000; // Save every 8 seconds when autoclicker/miners active
 const FORCE_SAVE_COOLDOWN = 2000; // Block regular saves for 2s after force save
 const IDLE_SAVE_DELAY = 3000; // Save after 3s of no state changes
 let saveTimeout: NodeJS.Timeout | null = null;

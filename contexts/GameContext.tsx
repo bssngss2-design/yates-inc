@@ -248,6 +248,8 @@ interface GameContextType {
   addLotteryTickets: (amount: number) => void;
   spendLotteryTickets: (amount: number) => boolean;
   getLotteryTickets: () => number;
+  // Manual save
+  saveNow: () => Promise<boolean>;
   // Roulette
   spinRouletteWheel: () => RouletteResult;
   // Permanent buffs from Wandering Trader
@@ -1948,6 +1950,19 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     stokens: state.stokens,
     lottery_tickets: state.lotteryTickets,
   });
+
+  const saveNow = useCallback(async (): Promise<boolean> => {
+    if (!userId || !userType) return false;
+    try {
+      const payload = buildSavePayload(gameState, userId, userType);
+      const result = await forceImmediateSave(payload);
+      const storageKey = getStorageKey(userId, gameState.isHardMode);
+      localStorage.setItem(storageKey, JSON.stringify({ ...gameState, localUpdatedAt: Date.now() }));
+      return result;
+    } catch {
+      return false;
+    }
+  }, [gameState, userId, userType]);
 
   // Save immediately when page is about to unload or tab is hidden
   useEffect(() => {
@@ -5021,6 +5036,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         spendLotteryTickets,
         getLotteryTickets,
         spinRouletteWheel,
+        saveNow,
         wanderingTraderPermBuffs,
       }}
     >

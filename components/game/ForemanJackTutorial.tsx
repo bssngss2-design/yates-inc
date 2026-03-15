@@ -51,6 +51,11 @@ const TUTORIAL_STEPS: TutorialStep[] = [
     action: 'none',
   },
   {
+    id: 'explain_saving',
+    dialog: "One more thing — your progress saves to the cloud automatically every 8 seconds. But if you want to save RIGHT NOW, hit the ⚙️ Settings button and smash that Save Now button. Or just press Q twice real quick!",
+    action: 'none',
+  },
+  {
     id: 'goodbye',
     dialog: "Alright, I'll let you get to work. Remember: click rocks, get money, buy stuff, prestige, repeat. Good luck, miner! ⛏️",
     action: 'none',

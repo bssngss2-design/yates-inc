@@ -81,6 +81,7 @@ export default function MiningGame({ onExit }: MiningGameProps) {
     getActiveBuffs,
     getActiveDebuffs,
     isWizardRitualActive,
+    saveNow,
   } = useGame();
 
   const { employee } = useAuth();
@@ -242,15 +243,15 @@ export default function MiningGame({ onExit }: MiningGameProps) {
     }
   }, [mineRock, gameState.currentRockHP, currentRock.clicksToBreak]);
 
-  // Keyboard handler - ESC to exit, I for terminal, + to mine
-  // Prevents WASD from bubbling to prevent page scroll/navigation
+  // QQ quick save: track last Q press to detect double-tap
+  const lastQPressRef = useRef(0);
+
+  // Keyboard handler - ESC to exit, I for terminal, + to mine, QQ to save
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't handle shortcuts if typing in any input/textarea (email, terminal, etc.)
       const target = e.target as HTMLElement;
       const activeElement = document.activeElement as HTMLElement;
       
-      // Check both target and activeElement to cover all input scenarios
       if (
         target.tagName === 'INPUT' || 
         target.tagName === 'TEXTAREA' ||
@@ -259,10 +260,9 @@ export default function MiningGame({ onExit }: MiningGameProps) {
         activeElement?.tagName === 'TEXTAREA' ||
         activeElement?.contentEditable === 'true'
       ) {
-        return; // Allow normal typing in inputs
+        return;
       }
 
-      // Prevent WASD keys only when NOT typing in inputs
       const preventedKeys = ['w', 'a', 's', 'd', 'W', 'A', 'S', 'D'];
       if (preventedKeys.includes(e.key)) {
         e.preventDefault();
@@ -274,25 +274,32 @@ export default function MiningGame({ onExit }: MiningGameProps) {
         onExit();
       }
 
-      // 'I' key toggles terminal (available to all users)
       if (e.key === 'i' || e.key === 'I') {
         setShowTerminal(prev => !prev);
       }
 
-      // 'R' key toggles ranking panel
       if (e.key === 'r' || e.key === 'R') {
         setShowRanking(prev => !prev);
       }
 
-      // '+' key to mine (sneaky mode)
       if (e.key === '+' || e.key === '=') {
         handleMine();
+      }
+
+      if (e.key === 'q' || e.key === 'Q') {
+        const now = Date.now();
+        if (now - lastQPressRef.current < 400) {
+          saveNow();
+          lastQPressRef.current = 0;
+        } else {
+          lastQPressRef.current = now;
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
-  }, [onExit, handleMine]);
+  }, [onExit, handleMine, saveNow]);
 
   const formatNumber = (num: number): string => {
     if (!isFinite(num)) return '∞';

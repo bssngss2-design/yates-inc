@@ -1512,7 +1512,6 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
           currentPickaxeId: 1,
           ownedPickaxeIds: [1],
           totalClicks: 0,
-          rocksMinedCount: 0,
           minerCount: 0,
           yatesDollars: (isYates || ownsTotem) ? prev.yatesDollars : 0,
           prestigeCount: newPrestigeCount,
@@ -2668,7 +2667,6 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         currentPickaxeId: 1,
         ownedPickaxeIds: [1],
         totalClicks: 0,
-        rocksMinedCount: 0,
         // Reset miners
         minerCount: 0,
         // Yates or totem protection keeps money, others lose it

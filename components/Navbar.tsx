@@ -56,17 +56,27 @@ export default function Navbar() {
       <nav className="bg-white dark:bg-gray-900 shadow-md fixed top-0 left-0 right-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-2">
-              <Link href="/" className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">
-                YATES
-              </Link>
-              <button
-                onClick={() => setShowGitCommits(true)}
-                className="text-xl sm:text-2xl font-bold text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
-                title="View Dev Status & Commits"
-              >
-                INC.
-              </button>
+            <div className="flex flex-col">
+              <div className="flex items-center gap-2">
+                <Link href="/" className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">
+                  YATES
+                </Link>
+                <button
+                  onClick={() => setShowGitCommits(true)}
+                  className="text-xl sm:text-2xl font-bold text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
+                  title="View Dev Status & Commits"
+                >
+                  INC.
+                </button>
+              </div>
+              {!isLoggedIn && !isClient && (
+                <Link
+                  href="/client-signup"
+                  className="text-[11px] text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white font-medium -mt-1 transition-colors"
+                >
+                  Make an account
+                </Link>
+              )}
             </div>
 
             {/* Desktop Navigation */}

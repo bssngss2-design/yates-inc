@@ -466,17 +466,18 @@ export const TRINKETS: Trinket[] = [
     name: 'Yates Totem',
     image: '/misc/Yates totem.png',
     rarity: 'secret',
-    cost: 777000000000,
-    shopChance: 0.005, // 0.5%
+    cost: 67e30, // 67 Nonillion
+    shopChance: 0, // Always in shop as permanent 3rd slot, not random
     effects: {
-      moneyBonus: 6.0,
-      rockDamageBonus: 6.0,
-      minerSpeedBonus: 6.0,
-      minerDamageBonus: 6.0,
-      clickSpeedBonus: 6.0,
-      couponLuckBonus: 6.0
+      moneyBonus: 60.0,
+      rockDamageBonus: 60.0,
+      minerSpeedBonus: 60.0,
+      minerDamageBonus: 60.0,
+      clickSpeedBonus: 60.0,
+      couponLuckBonus: 60.0,
+      bankInterestBonus: 1.12, // +12% bank interest (1.12x multiplier)
     },
-    description: '+600% EVERYTHING - The ultimate trinket',
+    description: '+6000% EVERYTHING + 12% bank interest - The ultimate trinket',
   },
   {
     id: 'spike',
@@ -766,6 +767,27 @@ export const TALISMAN_CONVERSION_COSTS: Record<string, TalismanConversionCost> =
   silver_trophy: { miners: 300, money: 1e18 },       // 1Qi (Nrahgrvaths)
   golden_trophy: { miners: 350, money: 3e18 },       // 3Qi (Arghtfavts)
   yates_totem: { miners: 420, money: 5e18 },         // 5Qi
+};
+
+// Yates Totem has hardcoded relic/talisman stats instead of using generic rarity multipliers
+export const YATES_TOTEM_RELIC_EFFECTS: TrinketEffects = {
+  moneyBonus: 80.0,         // 8000%
+  rockDamageBonus: 80.0,
+  minerSpeedBonus: 80.0,
+  minerDamageBonus: 80.0,
+  clickSpeedBonus: 80.0,
+  couponLuckBonus: 80.0,
+  bankInterestBonus: 1.15,  // +15% bank interest
+};
+
+export const YATES_TOTEM_TALISMAN_EFFECTS: TrinketEffects = {
+  moneyBonus: 120.0,        // 12000%
+  rockDamageBonus: 120.0,
+  minerSpeedBonus: 120.0,
+  minerDamageBonus: 120.0,
+  clickSpeedBonus: 120.0,
+  couponLuckBonus: 120.0,
+  bankInterestBonus: 1.17,  // +17% bank interest
 };
 
 // =====================
@@ -2632,7 +2654,7 @@ function generatePickaxeStoreItems(currency: StoreCurrency): StoreItem[] {
     lottery_tickets: [100,120,150,180,220,280,350,420,500,600,720,850,1000,1150,1300,1500,1650,1800,1950,2100,2200,2300,2400,2450,2500],
   };
   const prices = priceMap[currency];
-  // Pickaxe IDs 1-25 (26=Yates is golden cookie only)
+  // Pickaxe IDs 1-25 (26=Yates is in the regular PCX shop for 10QI)
   return Array.from({ length: 25 }, (_, i) => ({
     id: `${currency}_pcx_${i + 1}`,
     name: `Pickaxe #${i + 1}`,

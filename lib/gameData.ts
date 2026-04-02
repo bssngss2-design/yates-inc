@@ -250,12 +250,12 @@ export const PICKAXES: Pickaxe[] = [
     moneyMultiplier: 1.45,
     specialAbility: '+45% to everything (Darkness)',
   },
-  // === SPECIAL PICKAXES (Golden Cookie only) ===
+  // === SPECIAL PICKAXES ===
   {
     id: 26,
     name: 'Yates',
     image: '/game/pickaxes/yatespcx.png',
-    price: 0, // Cannot be bought - only from Golden Cookie
+    price: 10000000000000000, // 10QI
     clickPower: 500000,
     moneyMultiplier: 3.0,
     specialAbility: '3x money',

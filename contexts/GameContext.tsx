@@ -9,6 +9,7 @@ import {
   MINER_TICK_INTERVAL, MINER_BASE_DAMAGE, MINER_MAX_COUNT, getMinerCost, getPrestigePriceMultiplier,
   PRESTIGE_UPGRADES, PrestigeUpgrade, PRESTIGE_TOKENS_PER_PRESTIGE, RARITY_COLORS,
   RELIC_CONVERSION_COSTS, TALISMAN_CONVERSION_COSTS, RELIC_MULTIPLIERS, TALISMAN_MULTIPLIERS,
+  YATES_TOTEM_RELIC_EFFECTS, YATES_TOTEM_TALISMAN_EFFECTS,
   ACHIEVEMENTS, shouldUnlockAchievement, TITLES,
   // Path system
   GamePath, SacrificeBuff, SACRIFICE_BUFF_TIERS,
@@ -133,7 +134,6 @@ interface GameContextType {
   ownsTrinket: (trinketId: string) => boolean;
   getEquippedTrinkets: () => Trinket[];
   getTotalBonuses: () => { moneyBonus: number; rockDamageBonus: number; clickSpeedBonus: number; couponBonus: number; minerSpeedBonus: number; minerDamageBonus: number };
-  yatesTotemSpawned: boolean;
   // Relic & Talisman conversion functions
   convertToRelic: (trinketId: string, payWithTokens: boolean) => boolean;  // payWithTokens: true = tokens, false = money
   convertToTalisman: (trinketId: string) => boolean;
@@ -200,7 +200,7 @@ interface GameContextType {
   getMineEfficiency: () => number;
   // Bank functions
   depositToBank: (amount: number) => boolean;
-  withdrawFromBank: () => { principal: number; interest: number } | null;
+  withdrawFromBank: () => { principal: number; interest: number; capped: boolean } | null;
   getBankBalance: () => { principal: number; interest: number; totalTime: number };
   unlockBankTier: () => boolean;
   // Factory functions
@@ -386,12 +386,13 @@ function generateShopStock(): ShopStock {
 }
 
 // Generate random trinket shop items based on shopChance
+// Yates Totem is always appended as a permanent 3rd slot
 function generateTrinketShopItems(): string[] {
   const items: string[] = [];
   const numSlots = Math.floor(Math.random() * (TRINKET_SHOP_MAX_ITEMS - TRINKET_SHOP_MIN_ITEMS + 1)) + TRINKET_SHOP_MIN_ITEMS;
   
-  // Shuffle trinkets and pick based on shopChance
-  const shuffled = [...TRINKETS].sort(() => Math.random() - 0.5);
+  // Shuffle trinkets and pick based on shopChance (excluding Yates Totem -- it's always added)
+  const shuffled = [...TRINKETS].filter(t => t.id !== 'yates_totem').sort(() => Math.random() - 0.5);
   
   for (const trinket of shuffled) {
     if (items.length >= numSlots) break;
@@ -407,6 +408,11 @@ function generateTrinketShopItems(): string[] {
     const commonRare = TRINKETS.filter(t => t.rarity === 'common' || t.rarity === 'rare');
     const pick = commonRare[Math.floor(Math.random() * commonRare.length)];
     items.push(pick.id);
+  }
+
+  // Yates Totem is always in the shop as a permanent slot
+  if (!items.includes('yates_totem')) {
+    items.push('yates_totem');
   }
   
   return items;
@@ -444,7 +450,6 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
   const [isLoaded, setIsLoaded] = useState(true);
   const [isBanned, setIsBanned] = useState(false);
   const [banReason, setBanReason] = useState<string | null>(null);
-  const [yatesTotemSpawned, setYatesTotemSpawned] = useState(false);
   const { employee } = useAuth();
   const { client } = useClient();
   
@@ -974,12 +979,6 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       // Initial load (lastRefresh === 0) will trigger refresh since timeSinceRefresh will be huge
       if (timeSinceRefresh >= TRINKET_SHOP_REFRESH_INTERVAL) {
         const newItems = generateTrinketShopItems();
-        // Check if Yates Totem spawned
-        if (newItems.includes('yates_totem')) {
-          setYatesTotemSpawned(true);
-          // Auto-hide warning after 3 seconds
-          setTimeout(() => setYatesTotemSpawned(false), 3000);
-        }
         setGameState(prev => ({
           ...prev,
           trinketShopItems: newItems,
@@ -1053,14 +1052,26 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
           minerSpeedBonus: 0,
         };
         
-        // Trinket bonuses
-        for (const trinketId of prev.equippedTrinketIds) {
-          const trinket = TRINKETS.find(t => t.id === trinketId);
+        // Trinket bonuses (including relics/talismans)
+        for (const itemId of prev.equippedTrinketIds) {
+          const isRelic = itemId.endsWith('_relic');
+          const isTalisman = itemId.endsWith('_talisman');
+          const baseId = isRelic ? itemId.replace('_relic', '') : isTalisman ? itemId.replace('_talisman', '') : itemId;
+
+          const trinket = TRINKETS.find(t => t.id === baseId);
           if (trinket) {
-            const e = trinket.effects;
-            bonuses.moneyBonus += (e.moneyBonus || 0) + (e.allBonus || 0) + (e.minerMoneyBonus || 0);
-            bonuses.minerDamageBonus += (e.minerDamageBonus || 0) + (e.allBonus || 0);
-            bonuses.minerSpeedBonus += (e.minerSpeedBonus || 0) + (e.allBonus || 0);
+            const useOverride = baseId === 'yates_totem' && (isRelic || isTalisman);
+            const e = useOverride
+              ? (isRelic ? YATES_TOTEM_RELIC_EFFECTS : YATES_TOTEM_TALISMAN_EFFECTS)
+              : trinket.effects;
+            let multiplier = 1;
+            if (!useOverride) {
+              if (isRelic) multiplier = RELIC_MULTIPLIERS[trinket.rarity] || 1;
+              else if (isTalisman) multiplier = TALISMAN_MULTIPLIERS[trinket.rarity] || 1;
+            }
+            bonuses.moneyBonus += ((e.moneyBonus || 0) + (e.allBonus || 0) + (e.minerMoneyBonus || 0)) * multiplier;
+            bonuses.minerDamageBonus += ((e.minerDamageBonus || 0) + (e.allBonus || 0)) * multiplier;
+            bonuses.minerSpeedBonus += ((e.minerSpeedBonus || 0) + (e.allBonus || 0)) * multiplier;
           }
         }
         
@@ -1201,13 +1212,25 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         let moneyBonus = 0;
         let damageBonus = 0;
         
-        // Trinket bonuses
-        for (const trinketId of prev.equippedTrinketIds) {
-          const trinket = TRINKETS.find(t => t.id === trinketId);
+        // Trinket bonuses (including relics/talismans)
+        for (const itemId of prev.equippedTrinketIds) {
+          const isRelic = itemId.endsWith('_relic');
+          const isTalisman = itemId.endsWith('_talisman');
+          const baseId = isRelic ? itemId.replace('_relic', '') : isTalisman ? itemId.replace('_talisman', '') : itemId;
+
+          const trinket = TRINKETS.find(t => t.id === baseId);
           if (trinket) {
-            const e = trinket.effects;
-            moneyBonus += (e.moneyBonus || 0) + (e.allBonus || 0);
-            damageBonus += (e.minerDamageBonus || 0) + (e.allBonus || 0);
+            const useOverride = baseId === 'yates_totem' && (isRelic || isTalisman);
+            const e = useOverride
+              ? (isRelic ? YATES_TOTEM_RELIC_EFFECTS : YATES_TOTEM_TALISMAN_EFFECTS)
+              : trinket.effects;
+            let multiplier = 1;
+            if (!useOverride) {
+              if (isRelic) multiplier = RELIC_MULTIPLIERS[trinket.rarity] || 1;
+              else if (isTalisman) multiplier = TALISMAN_MULTIPLIERS[trinket.rarity] || 1;
+            }
+            moneyBonus += ((e.moneyBonus || 0) + (e.allBonus || 0)) * multiplier;
+            damageBonus += ((e.minerDamageBonus || 0) + (e.allBonus || 0)) * multiplier;
           }
         }
         
@@ -1626,14 +1649,20 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       
       const trinket = TRINKETS.find(t => t.id === baseTrinketId);
       if (trinket) {
-        const e = trinket.effects;
+        // Yates Totem relic/talisman uses hardcoded overrides instead of generic multipliers
+        const useOverride = baseTrinketId === 'yates_totem' && (isRelic || isTalisman);
+        const e = useOverride
+          ? (isRelic ? YATES_TOTEM_RELIC_EFFECTS : YATES_TOTEM_TALISMAN_EFFECTS)
+          : trinket.effects;
         
-        // Get multiplier based on type: relics use Light multipliers, talismans use Dark multipliers
+        // Get multiplier based on type (skipped for Yates Totem overrides which are already final values)
         let multiplier = 1;
-        if (isRelic) {
-          multiplier = RELIC_MULTIPLIERS[trinket.rarity] || 1;
-        } else if (isTalisman) {
-          multiplier = TALISMAN_MULTIPLIERS[trinket.rarity] || 1;
+        if (!useOverride) {
+          if (isRelic) {
+            multiplier = RELIC_MULTIPLIERS[trinket.rarity] || 1;
+          } else if (isTalisman) {
+            multiplier = TALISMAN_MULTIPLIERS[trinket.rarity] || 1;
+          }
         }
         
         bonuses.moneyBonus += ((e.moneyBonus || 0) + (e.allBonus || 0) + (e.minerMoneyBonus || 0)) * multiplier;
@@ -2123,10 +2152,15 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         const baseTrinketId = isRelic ? itemId.replace('_relic', '') : isTalisman ? itemId.replace('_talisman', '') : itemId;
         const trinket = TRINKETS.find(t => t.id === baseTrinketId);
         if (trinket) {
-          const e = trinket.effects;
+          const useOverride = baseTrinketId === 'yates_totem' && (isRelic || isTalisman);
+          const e = useOverride
+            ? (isRelic ? YATES_TOTEM_RELIC_EFFECTS : YATES_TOTEM_TALISMAN_EFFECTS)
+            : trinket.effects;
           let multiplier = 1;
-          if (isRelic) multiplier = RELIC_MULTIPLIERS[trinket.rarity] || 1;
-          else if (isTalisman) multiplier = TALISMAN_MULTIPLIERS[trinket.rarity] || 1;
+          if (!useOverride) {
+            if (isRelic) multiplier = RELIC_MULTIPLIERS[trinket.rarity] || 1;
+            else if (isTalisman) multiplier = TALISMAN_MULTIPLIERS[trinket.rarity] || 1;
+          }
           
           rockDamageBonus += ((e.rockDamageBonus || 0) + (e.allBonus || 0)) * multiplier;
           moneyBonus += ((e.moneyBonus || 0) + (e.allBonus || 0) + (e.minerMoneyBonus || 0)) * multiplier;
@@ -3426,9 +3460,6 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
 
   // Check if player can buy a pickaxe based on their path
   const canBuyPickaxeForPath = useCallback((pickaxeId: number): boolean => {
-    // Yates pickaxe cannot be bought - only from secret challenge (click the Rankings disclaimer text)
-    if (pickaxeId === YATES_PICKAXE_ID) return false;
-    
     // If no path chosen yet, can buy any non-restricted pickaxe
     if (!gameState.chosenPath) {
       return !DARKNESS_PICKAXE_IDS.includes(pickaxeId) && !LIGHT_PICKAXE_IDS.includes(pickaxeId);
@@ -3786,7 +3817,17 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
   const getBankInterestMultiplier = useCallback((): number => {
     let multiplier = 1;
     for (const trinketId of gameState.equippedTrinketIds) {
+      const isRelic = trinketId.endsWith('_relic');
+      const isTalisman = trinketId.endsWith('_talisman');
       const baseId = trinketId.replace('_relic', '').replace('_talisman', '');
+
+      // Yates Totem relic/talisman has hardcoded bank interest overrides
+      if (baseId === 'yates_totem' && (isRelic || isTalisman)) {
+        const override = isRelic ? YATES_TOTEM_RELIC_EFFECTS : YATES_TOTEM_TALISMAN_EFFECTS;
+        if (override.bankInterestBonus) multiplier *= override.bankInterestBonus;
+        continue;
+      }
+
       const trinket = TRINKETS.find(t => t.id === baseId);
       if (trinket?.effects.bankInterestBonus) {
         multiplier *= trinket.effects.bankInterestBonus;
@@ -3795,7 +3836,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     return multiplier;
   }, [gameState.equippedTrinketIds]);
 
-  const withdrawFromBank = useCallback((): { principal: number; interest: number } | null => {
+  const withdrawFromBank = useCallback((): { principal: number; interest: number; capped: boolean } | null => {
     if (!gameState.buildings.bank.owned) return null;
     if (gameState.buildings.bank.depositAmount <= 0) return null;
     if (!gameState.buildings.bank.depositTimestamp) return null;
@@ -3809,10 +3850,15 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       interestMultiplier
     );
 
+    const fullAmount = principal + interest;
+    const withdrawCap = Math.max(gameState.yatesDollars, (gameState.totalMoneyEarned || 0) / 2);
+    const withdrawAmount = Math.min(fullAmount, withdrawCap);
+    const capped = withdrawAmount < fullAmount;
+
     setGameState(prev => ({
       ...prev,
-      yatesDollars: safeAdd(prev.yatesDollars, safeMoney(principal + interest)),
-      totalMoneyEarned: safeAdd(prev.totalMoneyEarned || 0, safeMoney(interest)),
+      yatesDollars: safeAdd(prev.yatesDollars, safeMoney(withdrawAmount)),
+      totalMoneyEarned: safeAdd(prev.totalMoneyEarned || 0, safeMoney(Math.min(interest, withdrawAmount))),
       buildings: {
         ...prev.buildings,
         bank: {
@@ -3824,8 +3870,8 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       },
     }));
 
-    return { principal, interest };
-  }, [gameState.buildings.bank, getBankInterestMultiplier]);
+    return { principal, interest, capped };
+  }, [gameState.buildings.bank, gameState.yatesDollars, gameState.totalMoneyEarned, getBankInterestMultiplier]);
 
   const getBankBalance = useCallback((): { principal: number; interest: number; totalTime: number } => {
     if (!gameState.buildings.bank.depositTimestamp || gameState.buildings.bank.depositAmount <= 0) {
@@ -4914,7 +4960,6 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         ownsTrinket,
         getEquippedTrinkets,
         getTotalBonuses,
-        yatesTotemSpawned,
         // Relic & Talisman functions
         convertToRelic,
         convertToTalisman,

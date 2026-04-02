@@ -12,7 +12,7 @@ interface TrinketShopButtonProps {
 
 export default function TrinketShopButton({ hidden = false, inline = false, onOpen }: TrinketShopButtonProps) {
   const [timeLeft, setTimeLeft] = useState(0);
-  const { trinketShopItems, getTrinketShopTimeLeft, yatesTotemSpawned } = useGame();
+  const { trinketShopItems, getTrinketShopTimeLeft } = useGame();
   
   // Update timer every second
   useEffect(() => {
@@ -38,15 +38,6 @@ export default function TrinketShopButton({ hidden = false, inline = false, onOp
 
   return (
     <>
-      {/* Yates Totem Warning */}
-      {yatesTotemSpawned && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] animate-pulse">
-          <div className="bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg border-2 border-red-400">
-            <p className="font-bold text-lg">⚠️ Hurry up! A trinket directly from the USY has fallen! Go buy it! ⚠️</p>
-          </div>
-        </div>
-      )}
-      
       {/* Trinket Shop Button */}
       <button
         onClick={onOpen}

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Image from 'next/image';
 import { useGame } from '@/contexts/GameContext';
-import { BANK_BASE_INTEREST_RATE, BANK_TIERS, BANK_MAX_TIER, getBankDepositCap, TRINKETS } from '@/types/game';
+import { BANK_BASE_INTEREST_RATE, BANK_TIERS, BANK_MAX_TIER, getBankDepositCap, TRINKETS, YATES_TOTEM_RELIC_EFFECTS, YATES_TOTEM_TALISMAN_EFFECTS } from '@/types/game';
 
 interface BankModalProps {
   onClose: () => void;
@@ -23,7 +23,16 @@ export default function BankModal({ onClose }: BankModalProps) {
   const getBankInterestMultiplier = (): number => {
     let multiplier = 1;
     for (const trinketId of gameState.equippedTrinketIds) {
+      const isRelic = trinketId.endsWith('_relic');
+      const isTalisman = trinketId.endsWith('_talisman');
       const baseId = trinketId.replace('_relic', '').replace('_talisman', '');
+
+      if (baseId === 'yates_totem' && (isRelic || isTalisman)) {
+        const override = isRelic ? YATES_TOTEM_RELIC_EFFECTS : YATES_TOTEM_TALISMAN_EFFECTS;
+        if (override.bankInterestBonus) multiplier *= override.bankInterestBonus;
+        continue;
+      }
+
       const trinket = TRINKETS.find(t => t.id === baseId);
       if (trinket?.effects.bankInterestBonus) {
         multiplier *= trinket.effects.bankInterestBonus;
@@ -193,15 +202,29 @@ export default function BankModal({ onClose }: BankModalProps) {
             </div>
           ) : (
             <div className="space-y-4">
-              <button
-                onClick={() => withdrawFromBank()}
-                className="w-full py-3 rounded-lg font-bold bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 hover:to-amber-500 text-white transition-all"
-              >
-                Withdraw ${formatNumber(currentBalance)}
-              </button>
-              <p className="text-gray-400 text-xs text-center">
-                Leave your money longer for more interest!
-              </p>
+              {(() => {
+                const withdrawCap = Math.max(gameState.yatesDollars, (gameState.totalMoneyEarned || 0) / 2);
+                const withdrawAmount = Math.min(currentBalance, withdrawCap);
+                const isCapped = withdrawAmount < currentBalance;
+                return (
+                  <>
+                    <button
+                      onClick={() => withdrawFromBank()}
+                      className="w-full py-3 rounded-lg font-bold bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 hover:to-amber-500 text-white transition-all"
+                    >
+                      Withdraw ${formatNumber(withdrawAmount)}
+                    </button>
+                    {isCapped && (
+                      <p className="text-orange-400 text-xs text-center">
+                        Capped — max withdrawal is your balance (${formatNumber(gameState.yatesDollars)}) or half your leaderboard score (${formatNumber((gameState.totalMoneyEarned || 0) / 2)}), whichever is higher.
+                      </p>
+                    )}
+                    <p className="text-gray-400 text-xs text-center">
+                      Leave your money longer for more interest!
+                    </p>
+                  </>
+                );
+              })()}
             </div>
           )}
 

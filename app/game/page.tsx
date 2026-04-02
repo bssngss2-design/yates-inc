@@ -6,8 +6,6 @@ import PathSelection from '@/components/PathSelection';
 import LoreMode from '@/components/LoreMode';
 import MiningGame from '@/components/game/MiningGame';
 import { GameProvider } from '@/contexts/GameContext';
-import { useAuth } from '@/contexts/AuthContext';
-import { useClient } from '@/contexts/ClientContext';
 
 type GameState = 'path-selection' | 'lore' | 'gameplay' | 'gameplay-hard';
 
@@ -15,8 +13,6 @@ export default function GamePage() {
     const [gameState, setGameState] = useState<GameState>('path-selection');
     const [showSecretMessage, setShowSecretMessage] = useState(false);
     const [showNoAccountPopup, setShowNoAccountPopup] = useState(false);
-    const { isLoggedIn } = useAuth();
-    const { isClient } = useClient();
     const router = useRouter();
 
     // Check for secret completion - runs once on mount using window.location
@@ -36,15 +32,18 @@ export default function GamePage() {
     }, []);
 
     // Show popup and redirect if user has no account
+    // Check localStorage directly to avoid hydration race condition
     useEffect(() => {
-        if (!isLoggedIn && !isClient) {
+        const hasEmployee = !!localStorage.getItem('yates-employee');
+        const hasClient = !!localStorage.getItem('yates-client');
+        if (!hasEmployee && !hasClient) {
             setShowNoAccountPopup(true);
             const timer = setTimeout(() => {
                 router.push('/client-signup');
             }, 4000);
             return () => clearTimeout(timer);
         }
-    }, [isLoggedIn, isClient, router]);
+    }, [router]);
 
     const handlePathSelection = (path: 'lore' | 'gameplay' | 'hard') => {
         if (path === 'lore') {
@@ -64,15 +63,15 @@ export default function GamePage() {
             {/* No account popup */}
             {showNoAccountPopup && (
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70">
-                    <div className="bg-red-900 border-2 border-red-500 rounded-2xl px-8 py-6 shadow-2xl shadow-red-500/30 max-w-md mx-4 text-center">
-                        <p className="text-red-100 text-xl font-bold mb-2">
-                            Hey! U don&apos;t have an account, how do you want me to save your data?
+                    <div className="bg-red-900 border-2 border-red-500 rounded-2xl px-6 py-5 shadow-2xl shadow-red-500/30 max-w-sm mx-4 text-center">
+                        <p className="text-red-100 text-lg font-bold">
+                            No account = no saves.
                         </p>
-                        <p className="text-red-300 text-lg font-bold">
+                        <p className="text-red-300 font-bold mt-1">
                             .... Exactly
                         </p>
-                        <p className="text-red-400/70 text-sm mt-3 animate-pulse">
-                            Redirecting to signup...
+                        <p className="text-red-400/70 text-xs mt-2 animate-pulse">
+                            Redirecting...
                         </p>
                     </div>
                 </div>

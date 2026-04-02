@@ -31,13 +31,14 @@ export default function PrestigeButton() {
   
   // Calculate requirements for display
   const rockRequired = getPrestigeRockRequirement(gameState.prestigeCount);
-  const pickaxeRequired = getPrestigePickaxeRequirement(gameState.prestigeCount);
+  const pickaxeRequired = getPrestigePickaxeRequirement(gameState.prestigeCount, gameState.chosenPath);
   const hasRequiredRock = gameState.currentRockId >= rockRequired;
-  const hasRequiredPickaxe = gameState.ownedPickaxeIds.includes(pickaxeRequired);
+  const pickaxeSkipped = pickaxeRequired === -1;
+  const hasRequiredPickaxe = pickaxeSkipped || gameState.ownedPickaxeIds.includes(pickaxeRequired);
   
   // Get names for display
   const requiredRockName = ROCKS.find(r => r.id === rockRequired)?.name || `Rock #${rockRequired}`;
-  const requiredPickaxeName = PICKAXES.find(p => p.id === pickaxeRequired)?.name || `Pickaxe #${pickaxeRequired}`;
+  const requiredPickaxeName = pickaxeSkipped ? 'Skipped (path-locked)' : (PICKAXES.find(p => p.id === pickaxeRequired)?.name || `Pickaxe #${pickaxeRequired}`);
   const currentRockName = ROCKS.find(r => r.id === gameState.currentRockId)?.name || `Rock #${gameState.currentRockId}`;
 
   const formatMoney = (amount: number): string => {

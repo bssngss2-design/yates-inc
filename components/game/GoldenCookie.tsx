@@ -133,8 +133,6 @@ export default function GoldenCookie() {
       }
       case 'owo_title':
         return { emoji: '👀', text: 'OwO TITLE! (+500% ALL)', color: 'text-pink-400' };
-      case 'admin_commands':
-        return { emoji: '💻', text: 'ADMIN COMMANDS (5min)', color: 'text-cyan-400' };
       default:
         return { emoji: '🎁', text: 'Mystery Reward!', color: 'text-white' };
     }

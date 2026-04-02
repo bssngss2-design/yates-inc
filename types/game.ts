@@ -81,10 +81,9 @@ export const GOLDEN_COOKIE_REWARDS = {
   yatesTotem: 0.01,        // 1%  - Yates Totem trinket
   goldenTrophy: 0.005,     // 0.5% - Golden Trophy (Arghtfavts Trophye)
   silverTrophy: 0.005,     // 0.5% - Silver Trophy (Nrahgrvaths Trphye)
-  moneySmall: 0.36,        // 36% - +0.5% of current money
-  moneyMedium: 0.50,       // 50% - +1% of current money
+  moneySmall: 0.37,        // 37% - +0.5% of current money
+  moneyMedium: 0.51,       // 51% - +1% of current money
   owoTitle: 0.01,          // 1%  - Secret "OwO" title (+500% everything!)
-  adminCommands: 0.01,     // 1%  - 5min admin commands
 };
 
 // Golden Cookie spawn timing (ms)
@@ -321,9 +320,15 @@ export function getPrestigeRockRequirement(prestigeCount: number): number {
 }
 
 // Get scaled prestige pickaxe requirement (increases by 1 every 5 prestiges until max)
-export function getPrestigePickaxeRequirement(prestigeCount: number): number {
+// If the required pickaxe is path-locked against the player, returns -1 (skip requirement)
+export function getPrestigePickaxeRequirement(prestigeCount: number, chosenPath?: GamePath): number {
   const increase = Math.floor(prestigeCount / 5);
-  return Math.min(PRESTIGE_REQUIREMENTS.maxPickaxeId, PRESTIGE_REQUIREMENTS.minPickaxeId + increase);
+  const required = Math.min(PRESTIGE_REQUIREMENTS.maxPickaxeId, PRESTIGE_REQUIREMENTS.minPickaxeId + increase);
+
+  if (chosenPath === 'light' && DARKNESS_PICKAXE_IDS.includes(required)) return -1;
+  if (chosenPath === 'darkness' && LIGHT_PICKAXE_IDS.includes(required)) return -1;
+
+  return required;
 }
 
 // Yates special account (hidden admin - keeps money on prestige)

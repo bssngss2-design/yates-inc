@@ -1481,11 +1481,11 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     const interval = setInterval(() => {
       setGameState(prev => {
         const rockRequired = getPrestigeRockRequirement(prev.prestigeCount);
-        const pickaxeRequired = getPrestigePickaxeRequirement(prev.prestigeCount);
+        const pickaxeRequired = getPrestigePickaxeRequirement(prev.prestigeCount, prev.chosenPath);
         
         // Check requirements using prev (latest state)
         const canDo = prev.currentRockId >= rockRequired &&
-          prev.ownedPickaxeIds.includes(pickaxeRequired);
+          (pickaxeRequired === -1 || prev.ownedPickaxeIds.includes(pickaxeRequired));
         
         if (!canDo) return prev; // No change
         
@@ -2559,12 +2559,11 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
   // Money requirement removed - just need rock + pickaxe
   const canPrestige = useCallback(() => {
     const rockRequired = getPrestigeRockRequirement(gameState.prestigeCount);
-    const pickaxeRequired = getPrestigePickaxeRequirement(gameState.prestigeCount);
-    return (
-      gameState.currentRockId >= rockRequired &&
-      gameState.ownedPickaxeIds.includes(pickaxeRequired)
-    );
-  }, [gameState.currentRockId, gameState.ownedPickaxeIds, gameState.prestigeCount]);
+    const pickaxeRequired = getPrestigePickaxeRequirement(gameState.prestigeCount, gameState.chosenPath);
+    const meetsRock = gameState.currentRockId >= rockRequired;
+    const meetsPickaxe = pickaxeRequired === -1 || gameState.ownedPickaxeIds.includes(pickaxeRequired);
+    return meetsRock && meetsPickaxe;
+  }, [gameState.currentRockId, gameState.ownedPickaxeIds, gameState.prestigeCount, gameState.chosenPath]);
 
   // Perform prestige - reset progress, gain multiplier
   // Yates (000000) keeps all money, others get 1/32 sent to company budget
@@ -3614,16 +3613,16 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       return { type: 'money', value: 5000 };
     }
     
-    // 46% - Small money bonus (+0.5% of current, min $500)
-    cumulative += 0.46;
+    // 47% - Small money bonus (+0.5% of current, min $500)
+    cumulative += 0.47;
     if (roll < cumulative) {
       const bonus = safeMoney(Math.max(500, Math.floor(gameState.yatesDollars * 0.005)));
       setGameState(prev => ({ ...prev, yatesDollars: safeAdd(prev.yatesDollars, bonus), totalMoneyEarned: safeAdd(prev.totalMoneyEarned || 0, bonus) }));
       return { type: 'money', value: bonus };
     }
     
-    // 50% - Medium money bonus (+1% of current, min $1000)
-    cumulative += 0.50;
+    // 51% - Medium money bonus (+1% of current, min $1000)
+    cumulative += 0.51;
     if (roll < cumulative) {
       const bonus = safeMoney(Math.max(1000, Math.floor(gameState.yatesDollars * 0.01)));
       setGameState(prev => ({ ...prev, yatesDollars: safeAdd(prev.yatesDollars, bonus), totalMoneyEarned: safeAdd(prev.totalMoneyEarned || 0, bonus) }));
@@ -3632,20 +3631,13 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     
     // 1% - Secret "OwO" title (+500% everything!)
     cumulative += 0.01;
-    if (roll < cumulative) {
-      if (!gameState.ownedTitleIds?.includes('owo_secret')) {
-        setGameState(prev => ({ ...prev, ownedTitleIds: [...(prev.ownedTitleIds || []), 'owo_secret'] }));
-        return { type: 'owo_title', value: 'owo_secret' };
-      }
-      const bonus = safeMoney(Math.max(2000, Math.floor(gameState.yatesDollars * 0.24)));
-      setGameState(prev => ({ ...prev, yatesDollars: safeAdd(prev.yatesDollars, bonus), totalMoneyEarned: safeAdd(prev.totalMoneyEarned || 0, bonus) }));
-      return { type: 'money', value: bonus };
+    if (!gameState.ownedTitleIds?.includes('owo_secret')) {
+      setGameState(prev => ({ ...prev, ownedTitleIds: [...(prev.ownedTitleIds || []), 'owo_secret'] }));
+      return { type: 'owo_title', value: 'owo_secret' };
     }
-    
-    // 2% - 5min admin commands (fallback)
-    const adminExpiry = Date.now() + 5 * 60 * 1000;
-    setGameState(prev => ({ ...prev, adminCommandsUntil: adminExpiry }));
-    return { type: 'admin_commands', value: adminExpiry };
+    const bonus = safeMoney(Math.max(2000, Math.floor(gameState.yatesDollars * 0.24)));
+    setGameState(prev => ({ ...prev, yatesDollars: safeAdd(prev.yatesDollars, bonus), totalMoneyEarned: safeAdd(prev.totalMoneyEarned || 0, bonus) }));
+    return { type: 'money', value: bonus };
   }, [gameState.chosenPath, gameState.goldenCookieRitualActive, gameState.yatesDollars, gameState.ownedTrinketIds, gameState.ownedTitleIds, userId, userType]);
 
   // =====================
@@ -4829,22 +4821,6 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     return () => clearInterval(interval);
   }, [gameState.buildings.temple.equippedRank, gameState.buildings.mine.count]);
 
-  // Clear expired admin commands
-  useEffect(() => {
-    if (!gameState.adminCommandsUntil) return;
-    
-    const timeLeft = gameState.adminCommandsUntil - Date.now();
-    if (timeLeft <= 0) {
-      setGameState(prev => ({ ...prev, adminCommandsUntil: null }));
-      return;
-    }
-
-    const timeout = setTimeout(() => {
-      setGameState(prev => ({ ...prev, adminCommandsUntil: null }));
-    }, timeLeft);
-
-    return () => clearTimeout(timeout);
-  }, [gameState.adminCommandsUntil]);
 
   // Wealth tax for 1QI+ players (10-30% daily)
   const WEALTH_TAX_THRESHOLD = 1000000000000000000; // 1 Quintillion

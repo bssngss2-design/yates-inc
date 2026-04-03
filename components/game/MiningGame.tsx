@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { useGame } from '@/contexts/GameContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { PICKAXES, getNextRockUnlockInfo } from '@/lib/gameData';
-import { AUTOCLICKER_COST, AUTOCLICKER_CPS, getPrestigePriceMultiplier, YATES_PICKAXE_ID, DARKNESS_PICKAXE_IDS, LIGHT_PICKAXE_IDS } from '@/types/game';
+import { AUTOCLICKER_COST, AUTOCLICKER_CPS, getPrestigePriceMultiplier, YATES_PICKAXE_ID, DARKNESS_PICKAXE_IDS, LIGHT_PICKAXE_IDS, GamePath } from '@/types/game';
 import GameShop from './GameShop';
 import RockSelector from './RockSelector';
 import GameTerminal from './GameTerminal';
@@ -18,7 +18,6 @@ import AchievementsPanel from './AchievementsPanel';
 import TrinketIndex from './TrinketIndex';
 import RankingPanel from './RankingPanel';
 // CurrencyStore now integrated into GameShop tabs
-import PathSelectionModal from './PathSelectionModal';
 import GoldenCookie from './GoldenCookie';
 import WanderingTrader from './WanderingTrader';
 import SacrificeModal from './SacrificeModal';
@@ -104,6 +103,7 @@ export default function MiningGame({ onExit }: MiningGameProps) {
   const [showSacrifice, setShowSacrifice] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   // Stores moved into GameShop as tabs
+  const [confirmingPath, setConfirmingPath] = useState<GamePath>(null);
   const [displayProgress, setDisplayProgress] = useState(0);
   const [rockBroken, setRockBroken] = useState(false);
 
@@ -457,6 +457,9 @@ export default function MiningGame({ onExit }: MiningGameProps) {
 
   const backgroundImage = getBackgroundForRock(gameState.currentRockId);
 
+  // Player needs to pick a side if they've prestiged but haven't chosen yet
+  const needsPathChoice = gameState.prestigeCount >= 1 && !gameState.chosenPath;
+
   // =====================
   // BUILDING PANEL HELPERS (for desktop right panel)
   // =====================
@@ -803,28 +806,49 @@ export default function MiningGame({ onExit }: MiningGameProps) {
               </div>
             )}
 
-            {/* Path Progress */}
+            {/* Path Progress / Side Selection */}
             <div className="flex flex-col gap-1.5">
-              <span className="text-xs font-bold text-white">Path Progress</span>
+              <span className="text-xs font-bold text-white">
+                {needsPathChoice ? 'Choose Your Side' : 'Path Progress'}
+              </span>
+              {needsPathChoice && (
+                <span className="text-[10px] text-amber-400 animate-pulse">Pick a side to start playing!</span>
+              )}
               <div className="flex gap-2">
-                <div className={`flex-1 flex flex-col items-center gap-1 rounded-lg border px-2 py-2 ${
-                  gameState.chosenPath === 'light' ? 'border-yellow-600/50 bg-yellow-900/20' : 'border-gray-700/30 bg-gray-800/30 opacity-50'
-                }`}>
+                <button
+                  onClick={() => needsPathChoice && setConfirmingPath('light')}
+                  disabled={!needsPathChoice}
+                  className={`flex-1 flex flex-col items-center gap-1 rounded-lg border px-2 py-2 transition-all ${
+                    gameState.chosenPath === 'light'
+                      ? 'border-yellow-600/50 bg-yellow-900/20'
+                      : needsPathChoice
+                        ? 'border-yellow-600/40 bg-yellow-900/10 hover:border-yellow-400 hover:bg-yellow-900/30 hover:scale-105 cursor-pointer'
+                        : 'border-gray-700/30 bg-gray-800/30 opacity-50 cursor-default'
+                  }`}
+                >
                   <span className="text-base">☀️</span>
-                  <span className={`text-[10px] ${gameState.chosenPath === 'light' ? 'text-yellow-300' : 'text-gray-500'}`}>Light</span>
+                  <span className={`text-[10px] ${gameState.chosenPath === 'light' ? 'text-yellow-300' : needsPathChoice ? 'text-yellow-400' : 'text-gray-500'}`}>Light</span>
                   <span className={`text-xs font-bold ${gameState.chosenPath === 'light' ? 'text-yellow-400' : 'text-gray-600'}`}>
-                    {gameState.chosenPath === 'light' ? `Lv.${gameState.prestigeCount}` : 'Locked'}
+                    {gameState.chosenPath === 'light' ? `Lv.${gameState.prestigeCount}` : needsPathChoice ? 'Pick' : 'Locked'}
                   </span>
-                </div>
-                <div className={`flex-1 flex flex-col items-center gap-1 rounded-lg border px-2 py-2 ${
-                  gameState.chosenPath === 'darkness' ? 'border-purple-600/50 bg-purple-900/20' : 'border-gray-700/30 bg-gray-800/30 opacity-50'
-                }`}>
+                </button>
+                <button
+                  onClick={() => needsPathChoice && setConfirmingPath('darkness')}
+                  disabled={!needsPathChoice}
+                  className={`flex-1 flex flex-col items-center gap-1 rounded-lg border px-2 py-2 transition-all ${
+                    gameState.chosenPath === 'darkness'
+                      ? 'border-purple-600/50 bg-purple-900/20'
+                      : needsPathChoice
+                        ? 'border-purple-600/40 bg-purple-900/10 hover:border-purple-400 hover:bg-purple-900/30 hover:scale-105 cursor-pointer'
+                        : 'border-gray-700/30 bg-gray-800/30 opacity-50 cursor-default'
+                  }`}
+                >
                   <span className="text-base">🌙</span>
-                  <span className={`text-[10px] ${gameState.chosenPath === 'darkness' ? 'text-purple-300' : 'text-gray-500'}`}>Darkness</span>
+                  <span className={`text-[10px] ${gameState.chosenPath === 'darkness' ? 'text-purple-300' : needsPathChoice ? 'text-purple-400' : 'text-gray-500'}`}>Darkness</span>
                   <span className={`text-xs font-bold ${gameState.chosenPath === 'darkness' ? 'text-purple-400' : 'text-gray-600'}`}>
-                    {gameState.chosenPath === 'darkness' ? `Lv.${gameState.prestigeCount}` : 'Locked'}
+                    {gameState.chosenPath === 'darkness' ? `Lv.${gameState.prestigeCount}` : needsPathChoice ? 'Pick' : 'Locked'}
                   </span>
-                </div>
+                </button>
               </div>
             </div>
           </div>
@@ -1134,7 +1158,79 @@ export default function MiningGame({ onExit }: MiningGameProps) {
       {showRockSelector && <RockSelector onClose={() => setShowRockSelector(false)} />}
       <RankingPanel isOpen={showRanking} onClose={() => setShowRanking(false)} isHardMode={gameState.isHardMode} />
       <MinerSprites />
-      {gameState.showPathSelection && <PathSelectionModal onSelectPath={selectPath} />}
+
+      {/* Path choice blocker — covers the mining area when player needs to pick a side */}
+      {needsPathChoice && (
+        <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="text-center max-w-md px-6">
+            <h2 className="text-3xl font-bold text-white mb-3">Choose Your Side</h2>
+            <p className="text-gray-400 mb-8">Your first prestige has awakened something within you...</p>
+            <div className="flex gap-6 justify-center">
+              <button
+                onClick={() => setConfirmingPath('light')}
+                className="group flex flex-col items-center gap-3 p-6 rounded-2xl border-2 border-yellow-600/50 bg-yellow-900/10 hover:border-yellow-400 hover:bg-yellow-900/30 hover:scale-105 transition-all"
+              >
+                <span className="text-6xl">☀️</span>
+                <span className="text-xl font-bold text-yellow-400 group-hover:text-yellow-300">Light</span>
+                <span className="text-xs text-gray-400 group-hover:text-gray-300">Embrace the radiance</span>
+              </button>
+              <button
+                onClick={() => setConfirmingPath('darkness')}
+                className="group flex flex-col items-center gap-3 p-6 rounded-2xl border-2 border-purple-600/50 bg-purple-900/10 hover:border-purple-400 hover:bg-purple-900/30 hover:scale-105 transition-all"
+              >
+                <span className="text-6xl">🌑</span>
+                <span className="text-xl font-bold text-purple-400 group-hover:text-purple-300">Darkness</span>
+                <span className="text-xs text-gray-400 group-hover:text-gray-300">Power awaits those who dare</span>
+              </button>
+            </div>
+            <p className="text-gray-600 text-xs mt-6">Each path unlocks unique abilities, items, and secrets...</p>
+          </div>
+        </div>
+      )}
+
+      {/* Path confirmation modal */}
+      {confirmingPath && (
+        <div className="fixed inset-0 z-[10010] flex items-center justify-center bg-black/80">
+          <div className={`p-8 rounded-2xl border-2 max-w-md text-center ${
+            confirmingPath === 'light'
+              ? 'bg-gradient-to-b from-amber-900/80 to-yellow-900/60 border-yellow-500'
+              : 'bg-gradient-to-b from-purple-900/80 to-red-900/60 border-red-500'
+          }`}>
+            <div className="text-6xl mb-4">
+              {confirmingPath === 'light' ? '☀️' : '🌑'}
+            </div>
+            <h3 className="text-2xl font-bold text-white mb-4">
+              Choose the Path of {confirmingPath === 'light' ? 'Light' : 'Darkness'}?
+            </h3>
+            <p className="text-gray-300 mb-6">
+              This choice is <span className="text-red-400 font-bold">permanent</span>.
+              You cannot change your path once chosen.
+            </p>
+            <div className="flex gap-4">
+              <button
+                onClick={() => setConfirmingPath(null)}
+                className="flex-1 px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white font-bold rounded-xl transition-colors"
+              >
+                Go Back
+              </button>
+              <button
+                onClick={() => {
+                  selectPath(confirmingPath);
+                  setConfirmingPath(null);
+                }}
+                className={`flex-1 px-6 py-3 font-bold rounded-xl transition-all transform hover:scale-105 cursor-pointer ${
+                  confirmingPath === 'light'
+                    ? 'bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-400 hover:to-amber-400 text-black'
+                    : 'bg-gradient-to-r from-purple-600 to-red-600 hover:from-purple-500 hover:to-red-500 text-white'
+                }`}
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <GoldenCookie />
       <WanderingTrader />
       <TaxPopup />

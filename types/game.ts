@@ -171,7 +171,6 @@ export interface GameState {
   sacrificeBuff: SacrificeBuff | null; // Current active sacrifice buff
   adminCommandsUntil: number | null; // Timestamp when admin commands expire (from golden cookie)
   lastTaxTime: number | null;        // Timestamp of last wealth tax (1QI+ = 10-30% daily)
-  showPathSelection: boolean;        // Flag to show path selection modal
   // Timestamp for sync conflict resolution
   localUpdatedAt: number;
   // Playtime tracking for "Blessed by the Heavens" title

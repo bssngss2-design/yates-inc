@@ -321,7 +321,6 @@ const defaultGameState: GameState = {
   sacrificeBuff: null,
   adminCommandsUntil: null,
   lastTaxTime: null,
-  showPathSelection: false,
   // Timestamp for sync conflict resolution
   // IMPORTANT: Must be 0 (not Date.now()) so Supabase data is preferred on new devices
   localUpdatedAt: 0,
@@ -1571,27 +1570,6 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     }
   }, [gameState.currentRockId, gameState.ownedPickaxeIds, gameState.hasStocksUnlocked]);
 
-  // Path selection - show modal for players who have prestiged but haven't chosen a path
-  useEffect(() => {
-    // If path is already chosen, make sure modal is hidden
-    if (gameState.chosenPath && gameState.showPathSelection) {
-      console.log('🛤️ Path already chosen, hiding modal');
-      setGameState(prev => ({
-        ...prev,
-        showPathSelection: false,
-      }));
-      return;
-    }
-    
-    // Only show if player has prestiged at least once, hasn't chosen a path, and modal isn't already showing
-    if (gameState.prestigeCount >= 1 && !gameState.chosenPath && !gameState.showPathSelection) {
-      setGameState(prev => ({
-        ...prev,
-        showPathSelection: true,
-      }));
-    }
-  }, [gameState.prestigeCount, gameState.chosenPath, gameState.showPathSelection]);
-
   // Achievement tracking - permanently unlock achievements when criteria met
   useEffect(() => {
     const newUnlocks: string[] = [];
@@ -2721,8 +2699,6 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         // Ranking: track fastest prestige time and reset game start
         fastestPrestigeTime: newFastestTime,
         gameStartTime: Date.now(), // Reset for next prestige attempt
-        // PATH SELECTION: Show modal after first prestige if no path chosen yet
-        showPathSelection: newPrestigeCount === 1 && !prev.chosenPath,
         // Buildings (with Hard Mode reset logic)
         buildings: newBuildings,
         // Hard Mode prestige counter (for trinket wipe tracking)
@@ -3407,7 +3383,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
   // PATH SYSTEM FUNCTIONS
   // =====================
 
-  // Select path (Light or Darkness) - called from PathSelectionModal
+  // Select path (Light or Darkness) - called from side buttons in MiningGame
   // force=true allows admin terminal to override existing path choice
   const selectPath = useCallback((path: GamePath, force: boolean = false) => {
     console.log('🛤️ selectPath called with:', path);
@@ -3429,7 +3405,6 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     setGameState(prev => ({
       ...prev,
       chosenPath: path,
-      showPathSelection: false,
     }));
 
     // Force immediate save to Supabase - path selection is critical
@@ -3449,7 +3424,6 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       if (stored) {
         const parsed = JSON.parse(stored);
         parsed.chosenPath = path;
-        parsed.showPathSelection = false;
         localStorage.setItem(storageKey, JSON.stringify(parsed));
         console.log('💾 Saved path to localStorage');
       }

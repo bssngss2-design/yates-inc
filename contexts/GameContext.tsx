@@ -14,8 +14,9 @@ import {
   // Path system
   GamePath, SacrificeBuff, SACRIFICE_BUFF_TIERS,
   DARKNESS_PICKAXE_IDS, LIGHT_PICKAXE_IDS, YATES_PICKAXE_ID,
+  SIDE_LEVEL_MAX, getDarkSideLevelRequirements, getLightSideLevelRequirements, rollSideLevelBuff, getSideLevelBankInterestRate,
   // Shady Sam
-  ShadySamSwap, ShadySamStat, SHADY_SAM_SWAP_COST,
+  ShadySamSwap, ShadySamStat, getShadySamSwapCost,
   // Rock health scaling
   getScaledRockHP,
   // Building system
@@ -102,6 +103,7 @@ interface GameContextType {
   currentRock: typeof ROCKS[0];
   mineRock: () => { earnedMoney: number; brokeRock: boolean; couponDrop: string | null };
   buyPickaxe: (pickaxeId: number) => boolean;
+  buyAllAffordablePickaxes: () => number;
   canAffordPickaxe: (pickaxeId: number) => boolean;
   ownsPickaxe: (pickaxeId: number) => boolean;
   equipPickaxe: (pickaxeId: number) => void;
@@ -182,6 +184,9 @@ interface GameContextType {
   // PATH SYSTEM FUNCTIONS
   // =====================
   selectPath: (path: GamePath, force?: boolean) => void;
+  canLevelUpSide: () => boolean;
+  levelUpSide: () => { success: boolean; buff?: { stat: string; amount: number } };
+  getSideLevelProgress: () => { level: number; requirements: Record<string, { current: number; required: number; met: boolean }> } | null;
   canBuyPickaxeForPath: (pickaxeId: number) => boolean;
   canMineRockForPath: (rockId: number) => boolean;
   // Miner sacrifice (Darkness path)
@@ -327,6 +332,10 @@ const defaultGameState: GameState = {
   titleWinCounts: {},
   // Light vs Darkness Path System
   chosenPath: null,
+  sideLevel: 1,
+  sideLevelBuffs: {},
+  totalGoldenCookiesCollected: 0,
+  totalMinersSacrificed: 0,
   goldenCookieRitualActive: false,
   sacrificeBuff: null,
   adminCommandsUntil: null,
@@ -597,7 +606,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
           }
           
           const currentRock = ROCKS.find(r => r.id === loadedState.currentRockId) || ROCKS[0];
-          const maxHP = getScaledRockHP(currentRock.clicksToBreak, loadedState.prestigeCount, isHardMode);
+          const maxHP = getScaledRockHP(currentRock.clicksToBreak, loadedState.prestigeCount, isHardMode, loadedState.sideLevel || 0);
           if (loadedState.currentRockHP > maxHP) {
             console.log(`🔧 Fixing HP: ${loadedState.currentRockHP} > ${maxHP}, capping to max`);
             loadedState.currentRockHP = maxHP;
@@ -742,7 +751,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
                 const loadedRockId = useSupabase ? (supabaseData.current_rock_id ?? prev.currentRockId) : prev.currentRockId;
                 const loadedPrestige = useSupabase ? (supabaseData.prestige_count ?? prev.prestigeCount) : prev.prestigeCount;
                 const loadedRock = ROCKS.find(r => r.id === loadedRockId) || ROCKS[0];
-                const maxRockHP = getScaledRockHP(loadedRock.clicksToBreak, loadedPrestige, prev.isHardMode);
+                const maxRockHP = getScaledRockHP(loadedRock.clicksToBreak, loadedPrestige, prev.isHardMode, prev.sideLevel || 0);
                 const loadedHP = useSupabase ? (supabaseData.current_rock_hp ?? prev.currentRockHP) : prev.currentRockHP;
                 const cappedHP = Math.min(loadedHP, maxRockHP);
                 
@@ -823,6 +832,15 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
                 },
                 // Path system (always sync from Supabase - critical state)
                 chosenPath: (supabaseData.chosen_path as GamePath) ?? prev.chosenPath,
+                sideLevel: (supabaseData as unknown as { side_level?: number }).side_level ?? prev.sideLevel,
+                sideLevelBuffs: (() => {
+                  try {
+                    const raw = (supabaseData as unknown as { side_level_buffs?: string }).side_level_buffs;
+                    return raw ? JSON.parse(raw) : prev.sideLevelBuffs;
+                  } catch { return prev.sideLevelBuffs; }
+                })(),
+                totalGoldenCookiesCollected: (supabaseData as unknown as { total_golden_cookies_collected?: number }).total_golden_cookies_collected ?? prev.totalGoldenCookiesCollected,
+                totalMinersSacrificed: (supabaseData as unknown as { total_miners_sacrificed?: number }).total_miners_sacrificed ?? prev.totalMinersSacrificed,
                 // Tax system (sync from Supabase)
                 lastTaxTime: (supabaseData as unknown as { last_tax_time?: number | null }).last_tax_time ?? prev.lastTaxTime,
                 // Loans
@@ -1211,7 +1229,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         
         // Rock broke! Calculate how many rocks we break with overkill damage
         const overkillDamage = Math.abs(newHP); // Damage beyond first rock
-        const fullRockHP = getScaledRockHP(rock.clicksToBreak, prev.prestigeCount, prev.isHardMode);
+        const fullRockHP = getScaledRockHP(rock.clicksToBreak, prev.prestigeCount, prev.isHardMode, prev.sideLevel || 0);
         
         // First rock + additional rocks from overkill
         const additionalRocks = Math.floor(overkillDamage / fullRockHP);
@@ -1232,7 +1250,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         
         return {
           ...prev,
-          currentRockHP: newCurrentRockId !== prev.currentRockId ? getScaledRockHP(nextRock.clicksToBreak, prev.prestigeCount, prev.isHardMode) : finalHP,
+          currentRockHP: newCurrentRockId !== prev.currentRockId ? getScaledRockHP(nextRock.clicksToBreak, prev.prestigeCount, prev.isHardMode, prev.sideLevel || 0) : finalHP,
           currentRockId: newCurrentRockId,
           rocksMinedCount: prev.rocksMinedCount + totalRocksBroken,
           yatesDollars: safeAdd(prev.yatesDollars, totalMoney),
@@ -1375,7 +1393,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
           
           // Rock broke
           const overkillDamage = Math.abs(newHP);
-          const fullRockHP = getScaledRockHP(rock.clicksToBreak, prev.prestigeCount, prev.isHardMode);
+          const fullRockHP = getScaledRockHP(rock.clicksToBreak, prev.prestigeCount, prev.isHardMode, prev.sideLevel || 0);
           const additionalRocks = Math.floor(overkillDamage / fullRockHP);
           const totalRocksBroken = 1 + additionalRocks;
           const leftoverDamage = overkillDamage % fullRockHP;
@@ -1390,7 +1408,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
           
           return {
             ...prev,
-            currentRockHP: newCurrentRockId !== prev.currentRockId ? getScaledRockHP(nextRock.clicksToBreak, prev.prestigeCount, prev.isHardMode) : finalHP,
+            currentRockHP: newCurrentRockId !== prev.currentRockId ? getScaledRockHP(nextRock.clicksToBreak, prev.prestigeCount, prev.isHardMode, prev.sideLevel || 0) : finalHP,
             currentRockId: newCurrentRockId,
             rocksMinedCount: prev.rocksMinedCount + totalRocksBroken,
             yatesDollars: safeAdd(prev.yatesDollars, totalMoney),
@@ -1609,7 +1627,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         return {
           ...prev,
           currentRockId: 1,
-          currentRockHP: getScaledRockHP(ROCKS[0].clicksToBreak, newPrestigeCount, prev.isHardMode),
+          currentRockHP: getScaledRockHP(ROCKS[0].clicksToBreak, newPrestigeCount, prev.isHardMode, prev.sideLevel || 0),
           currentPickaxeId: 1,
           ownedPickaxeIds: [1],
           totalClicks: 0,
@@ -1847,25 +1865,39 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     }
 
     // SHADY SAM SWAPS (Darkness path only) — debuff one stat, buff another
+    const samStatMap: Record<ShadySamStat, keyof typeof bonuses> = {
+      couponLuck: 'couponBonus',
+      minerSpeed: 'minerSpeedBonus',
+      clickDamage: 'clickSpeedBonus',
+      pcxDamage: 'rockDamageBonus',
+      moneyMultiplier: 'moneyBonus',
+      minerDamage: 'minerDamageBonus',
+    };
     for (const swap of (gameState.shadySamSwaps || [])) {
-      const statMap: Record<ShadySamStat, keyof typeof bonuses> = {
-        couponLuck: 'couponBonus',
-        minerSpeed: 'minerSpeedBonus',
-        clickDamage: 'clickSpeedBonus',
-        pcxDamage: 'rockDamageBonus',
-        moneyMultiplier: 'moneyBonus',
-        minerDamage: 'minerDamageBonus',
-      };
-      const debuffKey = statMap[swap.debuffStat];
-      const buffKey = statMap[swap.buffStat];
+      const debuffKey = samStatMap[swap.debuffStat];
+      const buffKey = samStatMap[swap.buffStat];
       if (debuffKey && buffKey) {
-        bonuses[debuffKey] -= swap.amount;
-        bonuses[buffKey] += swap.amount;
+        // Can only sacrifice what you actually have (floor at 0)
+        const actual = Math.min(swap.amount, Math.max(0, bonuses[debuffKey]));
+        bonuses[debuffKey] -= actual;
+        bonuses[buffKey] += actual;
       }
     }
     
+    // Side Level permanent buffs (10% random stat per level-up)
+    for (const [stat, amount] of Object.entries(gameState.sideLevelBuffs || {})) {
+      if (stat in bonuses) {
+        bonuses[stat as keyof typeof bonuses] += amount;
+      }
+    }
+
+    // Floor all stats at 0
+    for (const key of Object.keys(bonuses) as (keyof typeof bonuses)[]) {
+      if (bonuses[key] < 0) bonuses[key] = 0;
+    }
+    
     return bonuses;
-  }, [gameState.equippedTrinketIds, gameState.ownedPrestigeUpgradeIds, gameState.equippedTitleIds, gameState.chosenPath, gameState.sacrificeBuff, gameState.buildings.temple.equippedRank, gameState.buildings.wizard_tower.ritualActive, gameState.buildings.wizard_tower.ritualEndTime, gameState.ownedPremiumProductIds, gameState.shadySamSwaps]);
+  }, [gameState.equippedTrinketIds, gameState.ownedPrestigeUpgradeIds, gameState.equippedTitleIds, gameState.chosenPath, gameState.sacrificeBuff, gameState.buildings.temple.equippedRank, gameState.buildings.wizard_tower.ritualActive, gameState.buildings.wizard_tower.ritualEndTime, gameState.ownedPremiumProductIds, gameState.shadySamSwaps, gameState.sideLevelBuffs]);
 
   // Track dirty state for throttled localStorage saves
   const localSaveDirtyRef = useRef(false);
@@ -1975,6 +2007,10 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
           title_win_counts: gameState.titleWinCounts,
           // Path system
           chosen_path: gameState.chosenPath,
+          side_level: gameState.sideLevel,
+          side_level_buffs: JSON.stringify(gameState.sideLevelBuffs),
+          total_golden_cookies_collected: gameState.totalGoldenCookiesCollected,
+          total_miners_sacrificed: gameState.totalMinersSacrificed,
           // Tax system
           last_tax_time: gameState.lastTaxTime,
           // Loans
@@ -2044,6 +2080,10 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     equipped_title_ids: state.equippedTitleIds,
     title_win_counts: state.titleWinCounts,
     chosen_path: state.chosenPath,
+    side_level: state.sideLevel,
+    side_level_buffs: JSON.stringify(state.sideLevelBuffs),
+    total_golden_cookies_collected: state.totalGoldenCookiesCollected,
+    total_miners_sacrificed: state.totalMinersSacrificed,
     last_tax_time: state.lastTaxTime,
     loan_amount: state.loanAmount,
     loan_taken_at: state.loanTakenAt,
@@ -2429,7 +2469,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         
         // Reset HP for new rock (scaled by prestige)
         const nextRock = getRockById(newCurrentRockId) || rock;
-        newRockHP = getScaledRockHP(nextRock.clicksToBreak, prev.prestigeCount, prev.isHardMode);
+        newRockHP = getScaledRockHP(nextRock.clicksToBreak, prev.prestigeCount, prev.isHardMode, prev.sideLevel || 0);
       }
 
       // Check for lottery ticket drop (rebranded from coupons)
@@ -2490,7 +2530,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
   const canAffordPickaxe = useCallback((pickaxeId: number) => {
     const pickaxe = getPickaxeById(pickaxeId);
     if (!pickaxe) return false;
-    const scaledPrice = Math.floor(pickaxe.price * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode));
+    const scaledPrice = Math.floor(pickaxe.price * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0));
     return gameState.yatesDollars >= scaledPrice;
   }, [gameState.yatesDollars, gameState.prestigeCount, gameState.isHardMode]);
 
@@ -2502,10 +2542,10 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     const pickaxe = getPickaxeById(pickaxeId);
     if (!pickaxe) return false;
     if (gameState.ownedPickaxeIds.includes(pickaxeId)) return false;
-    const scaledPrice = Math.floor(pickaxe.price * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode));
+    const scaledPrice = Math.floor(pickaxe.price * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0));
     if (gameState.yatesDollars < scaledPrice) return false;
 
-    // Clear click history to prevent anti-cheat false positives from rapid purchases
+    window._clickTimestamps = [];
     window._clickTimestamps = [];
 
     setGameState((prev) => ({
@@ -2519,6 +2559,56 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
 
     return true;
   }, [gameState.ownedPickaxeIds, gameState.yatesDollars, gameState.prestigeCount]);
+
+  const buyAllAffordablePickaxes = useCallback((): number => {
+    let bought = 0;
+    setGameState(prev => {
+      let money = prev.yatesDollars;
+      const owned = new Set(prev.ownedPickaxeIds);
+      const priceMultiplier = getPrestigePriceMultiplier(prev.prestigeCount, prev.isHardMode, prev.sideLevel || 0);
+
+      const skippedIds = new Set<number>();
+      if (prev.chosenPath === 'darkness') {
+        LIGHT_PICKAXE_IDS.forEach(id => skippedIds.add(id));
+      } else if (prev.chosenPath === 'light') {
+        DARKNESS_PICKAXE_IDS.forEach(id => skippedIds.add(id));
+      } else {
+        LIGHT_PICKAXE_IDS.forEach(id => skippedIds.add(id));
+        DARKNESS_PICKAXE_IDS.forEach(id => skippedIds.add(id));
+      }
+
+      for (const pickaxe of PICKAXES) {
+        if (owned.has(pickaxe.id)) continue;
+        if (skippedIds.has(pickaxe.id)) continue;
+        const price = Math.floor(pickaxe.price * priceMultiplier);
+        if (money < price) continue;
+
+        const prevIds = Array.from(owned);
+        const regularOwned = prevIds.filter(id => !skippedIds.has(id));
+        const highest = regularOwned.length > 0 ? Math.max(...regularOwned) : 0;
+        let nextId = highest + 1;
+        while (skippedIds.has(nextId) && nextId <= 30) nextId++;
+        if (pickaxe.id !== nextId) continue;
+
+        money -= price;
+        owned.add(pickaxe.id);
+        bought++;
+      }
+
+      if (bought === 0) return prev;
+
+      window._clickTimestamps = [];
+      const newOwned = Array.from(owned);
+      return {
+        ...prev,
+        yatesDollars: money,
+        ownedPickaxeIds: newOwned,
+        currentPickaxeId: Math.max(...newOwned),
+        isBlocked: prev.appealPending ? prev.isBlocked : false,
+      };
+    });
+    return bought;
+  }, []);
 
   const equipPickaxe = useCallback((pickaxeId: number) => {
     if (!gameState.ownedPickaxeIds.includes(pickaxeId)) return;
@@ -2536,7 +2626,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     setGameState((prev) => ({
       ...prev,
       currentRockId: rockId,
-      currentRockHP: getScaledRockHP(rock.clicksToBreak, prev.prestigeCount, prev.isHardMode),
+      currentRockHP: getScaledRockHP(rock.clicksToBreak, prev.prestigeCount, prev.isHardMode, prev.sideLevel || 0),
     }));
   }, [gameState.totalClicks]);
 
@@ -2648,7 +2738,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
 
   const buyAutoclicker = useCallback(() => {
     if (gameState.hasAutoclicker) return false;
-    const scaledCost = Math.floor(AUTOCLICKER_COST * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode));
+    const scaledCost = Math.floor(AUTOCLICKER_COST * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0));
     if (gameState.yatesDollars < scaledCost) return false;
 
     setGameState((prev) => ({
@@ -2779,7 +2869,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         ...prev,
         // Reset rocks and pickaxes (rock HP scaled by new prestige count)
         currentRockId: 1,
-        currentRockHP: getScaledRockHP(ROCKS[0].clicksToBreak, newPrestigeCount, prev.isHardMode),
+        currentRockHP: getScaledRockHP(ROCKS[0].clicksToBreak, newPrestigeCount, prev.isHardMode, prev.sideLevel || 0),
         currentPickaxeId: 1,
         ownedPickaxeIds: [1],
         totalClicks: 0,
@@ -2886,7 +2976,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     const trinket = TRINKETS.find(t => t.id === trinketId);
     if (!trinket) return false;
     if (gameState.ownedTrinketIds.includes(trinketId)) return false;
-    const scaledCost = Math.floor(trinket.cost * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode));
+    const scaledCost = Math.floor(trinket.cost * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0));
     if (gameState.yatesDollars < scaledCost) return false;
     
     setGameState(prev => ({
@@ -3181,7 +3271,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       setGameState(prev => ({
         ...prev,
         yatesDollars: safeAdd(prev.yatesDollars - ability.cost, money),
-        currentRockHP: getScaledRockHP(rock.clicksToBreak, prev.prestigeCount, prev.isHardMode), // Reset to full scaled HP
+        currentRockHP: getScaledRockHP(rock.clicksToBreak, prev.prestigeCount, prev.isHardMode, prev.sideLevel || 0), // Reset to full scaled HP
         rocksMinedCount: prev.rocksMinedCount + 1,
         abilityCooldowns: {
           ...prev.abilityCooldowns,
@@ -3344,7 +3434,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       return {
         ...prev,
         currentRockId: targetRockId,
-        currentRockHP: getScaledRockHP(targetRock.clicksToBreak, prev.prestigeCount, prev.isHardMode),
+        currentRockHP: getScaledRockHP(targetRock.clicksToBreak, prev.prestigeCount, prev.isHardMode, prev.sideLevel || 0),
       };
     });
   }, []);
@@ -3536,6 +3626,64 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     }
   }, [userId, userType]);
 
+  // Side Levels — progress check
+  const getSideLevelProgress = useCallback(() => {
+    if (!gameState.chosenPath) return null;
+    const level = gameState.sideLevel || 1;
+    if (level >= SIDE_LEVEL_MAX) return { level, requirements: {} };
+
+    const nextLevel = level + 1;
+
+    if (gameState.chosenPath === 'darkness') {
+      const reqs = getDarkSideLevelRequirements(nextLevel);
+      return {
+        level,
+        requirements: {
+          'Miners Sacrificed': { current: gameState.totalMinersSacrificed || 0, required: reqs.totalMinersSacrificed, met: (gameState.totalMinersSacrificed || 0) >= reqs.totalMinersSacrificed },
+          'Mining Level': { current: gameState.rocksMinedCount || 0, required: reqs.miningLevelReached, met: (gameState.rocksMinedCount || 0) >= reqs.miningLevelReached },
+          'Total Money Earned': { current: gameState.totalMoneyEarned || 0, required: reqs.totalMoneyEarned, met: (gameState.totalMoneyEarned || 0) >= reqs.totalMoneyEarned },
+        },
+      };
+    }
+
+    const reqs = getLightSideLevelRequirements(nextLevel);
+    return {
+      level,
+      requirements: {
+        'Prestige Rank': { current: gameState.prestigeCount || 0, required: reqs.prestigeCount!, met: (gameState.prestigeCount || 0) >= reqs.prestigeCount! },
+        'Golden Cookies': { current: gameState.totalGoldenCookiesCollected || 0, required: reqs.goldenCookiesCollected!, met: (gameState.totalGoldenCookiesCollected || 0) >= reqs.goldenCookiesCollected! },
+        'Total Money Earned': { current: gameState.totalMoneyEarned || 0, required: reqs.totalMoneyEarned, met: (gameState.totalMoneyEarned || 0) >= reqs.totalMoneyEarned },
+        'Zero Miners': { current: gameState.minerCount, required: 0, met: gameState.minerCount === 0 },
+      },
+    };
+  }, [gameState.chosenPath, gameState.sideLevel, gameState.totalMinersSacrificed, gameState.rocksMinedCount, gameState.totalMoneyEarned, gameState.prestigeCount, gameState.totalGoldenCookiesCollected, gameState.minerCount]);
+
+  const canLevelUpSide = useCallback((): boolean => {
+    const progress = getSideLevelProgress();
+    if (!progress) return false;
+    if (progress.level >= SIDE_LEVEL_MAX) return false;
+    return Object.values(progress.requirements).every(r => r.met);
+  }, [getSideLevelProgress]);
+
+  const levelUpSide = useCallback((): { success: boolean; buff?: { stat: string; amount: number } } => {
+    if (!canLevelUpSide()) return { success: false };
+    const buff = rollSideLevelBuff();
+    setGameState(prev => {
+      const newBuffs = { ...(prev.sideLevelBuffs || {}) };
+      newBuffs[buff.stat] = (newBuffs[buff.stat] || 0) + buff.amount;
+      const newLevel = (prev.sideLevel || 1) + 1;
+      const rock = getRockById(prev.currentRockId) || ROCKS[0];
+      const newMaxHP = getScaledRockHP(rock.clicksToBreak, prev.prestigeCount, prev.isHardMode, newLevel);
+      return {
+        ...prev,
+        sideLevel: newLevel,
+        sideLevelBuffs: newBuffs,
+        currentRockHP: Math.min(prev.currentRockHP, newMaxHP),
+      };
+    });
+    return { success: true, buff };
+  }, [canLevelUpSide]);
+
   // Check if player can buy a pickaxe based on their path
   const canBuyPickaxeForPath = useCallback((pickaxeId: number): boolean => {
     // If no path chosen yet, can buy any non-restricted pickaxe
@@ -3571,7 +3719,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       let miners = prev.minerCount;
       for (let i = 0; i < count; i++) {
         if (miners >= MINER_MAX_COUNT) break;
-        const cost = getMinerCost(miners, prev.prestigeCount, prev.isHardMode);
+        const cost = getMinerCost(miners, prev.prestigeCount, prev.isHardMode, prev.sideLevel || 0);
         if (money < cost) break;
         money -= cost;
         miners++;
@@ -3630,6 +3778,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       setGameState(prev => ({
         ...prev,
         minerCount: prev.minerCount - count,
+        totalMinersSacrificed: (prev.totalMinersSacrificed || 0) + count,
         sacrificeBuff: buffInfo.buff,
         buildings: {
           ...prev.buildings,
@@ -3640,11 +3789,9 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         },
       }));
     } else {
-      // BLOOD RITUAL: 0.5% + 0.5% per miner backfire chance
       const backfireChance = 0.005 + (count * 0.005);
       const backfired = Math.random() < backfireChance;
       
-      // If backfired, apply DEBUFF (negative values) instead of buff
       const finalBuff = backfired ? {
         ...buffInfo.buff,
         moneyBonus: -buffInfo.buff.moneyBonus,
@@ -3656,6 +3803,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       setGameState(prev => ({
         ...prev,
         minerCount: prev.minerCount - count,
+        totalMinersSacrificed: (prev.totalMinersSacrificed || 0) + count,
         sacrificeBuff: finalBuff,
       }));
     }
@@ -3668,18 +3816,19 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     if (gameState.chosenPath !== 'darkness') return false;
     if (debuffStat === buffStat) return false;
     if (amount <= 0) return false;
-    if (gameState.yatesDollars < SHADY_SAM_SWAP_COST) return false;
+    const cost = getShadySamSwapCost(amount);
+    if (gameState.yatesDollars < cost) return false;
 
     const swap: ShadySamSwap = {
       id: `sam_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
       debuffStat,
       buffStat,
-      amount: amount / 100, // convert percentage to decimal (e.g. 50 -> 0.5)
+      amount: amount / 100,
     };
 
     setGameState(prev => ({
       ...prev,
-      yatesDollars: prev.yatesDollars - SHADY_SAM_SWAP_COST,
+      yatesDollars: prev.yatesDollars - cost,
       shadySamSwaps: [...prev.shadySamSwaps, swap],
     }));
 
@@ -3729,6 +3878,9 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     const isDarknessWithRitual = gameState.chosenPath === 'darkness' && gameState.goldenCookieRitualActive;
     
     if (!isLightPath && !isDarknessWithRitual) return null;
+    
+    // Track golden cookie collection for side levels
+    setGameState(prev => ({ ...prev, totalGoldenCookiesCollected: (prev.totalGoldenCookiesCollected || 0) + 1 }));
     
     const roll = Math.random();
     let cumulative = 0;
@@ -3955,7 +4107,8 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       principal,
       gameState.buildings.bank.depositTimestamp,
       Date.now(),
-      interestMultiplier
+      interestMultiplier,
+      gameState.sideLevel || 0
     );
 
     const fullAmount = principal + interest;
@@ -3989,7 +4142,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     const principal = gameState.buildings.bank.depositAmount;
     const totalTime = Date.now() - gameState.buildings.bank.depositTimestamp;
     const interestMultiplier = getBankInterestMultiplier();
-    const interest = calculateBankInterest(principal, gameState.buildings.bank.depositTimestamp, Date.now(), interestMultiplier);
+    const interest = calculateBankInterest(principal, gameState.buildings.bank.depositTimestamp, Date.now(), interestMultiplier, gameState.sideLevel || 0);
     
     return { principal, interest, totalTime };
   }, [gameState.buildings.bank, getBankInterestMultiplier]);
@@ -4154,9 +4307,11 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       return { success: false, message: `Wait ${remaining}s before praying again.` };
     }
     
-    // 20% chance of success
     const roll = Math.random();
-    const isSuccess = roll < 0.20;
+    const newPrayerCount = (gameState.buildings.temple.prayerCount || 0) + 1;
+    // Temple Rank 3: guaranteed GC every 2 prays. Otherwise 20% chance.
+    const isRank3 = gameState.buildings.temple.equippedRank === 3;
+    const isSuccess = (isRank3 && newPrayerCount % 2 === 0) || roll < 0.20;
     
     setGameState(prev => ({
       ...prev,
@@ -4164,7 +4319,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         ...prev.buildings,
         temple: {
           ...prev.buildings.temple,
-          prayerCount: (prev.buildings.temple.prayerCount || 0) + 1,
+          prayerCount: newPrayerCount,
           lastPrayerTime: now,
           pendingGoldenCookie: isSuccess ? true : prev.buildings.temple.pendingGoldenCookie,
         },
@@ -4979,7 +5134,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
             // Rock heals to 100%
             const currentRock = getRockById(newState.currentRockId);
             if (currentRock) {
-              newState.currentRockHP = getScaledRockHP(currentRock.clicksToBreak, newState.prestigeCount, newState.isHardMode);
+              newState.currentRockHP = getScaledRockHP(currentRock.clicksToBreak, newState.prestigeCount, newState.isHardMode, newState.sideLevel || 0);
             }
           } else if (debuffRoll < 0.8) {
             // 2x rock health (for current rock only)
@@ -5086,6 +5241,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         currentRock,
         mineRock,
         buyPickaxe,
+        buyAllAffordablePickaxes,
         canAffordPickaxe,
         ownsPickaxe,
         equipPickaxe,
@@ -5162,6 +5318,9 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         getActiveAbilityTimeRemaining,
         // Path system functions
         selectPath,
+        canLevelUpSide,
+        levelUpSide,
+        getSideLevelProgress,
         canBuyPickaxeForPath,
         canMineRockForPath,
         sacrificeMiners,

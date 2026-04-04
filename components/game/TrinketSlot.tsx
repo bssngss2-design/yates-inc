@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useGame } from '@/contexts/GameContext';
-import { TRINKETS, RARITY_COLORS, Trinket, RELIC_MULTIPLIERS, TALISMAN_MULTIPLIERS } from '@/types/game';
+import { TRINKETS, RARITY_COLORS, Trinket, RELIC_MULTIPLIERS, TALISMAN_MULTIPLIERS, YATES_TOTEM_RELIC_EFFECTS, YATES_TOTEM_TALISMAN_EFFECTS, TrinketEffects } from '@/types/game';
 
 export default function TrinketSlot() {
   const [showSelector, setShowSelector] = useState(false);
@@ -542,17 +542,29 @@ export default function TrinketSlot() {
                       </div>
                       <p className="text-[10px] text-gray-400 truncate">
                         {item.multiplier > 1 ? (
-                          // Show multiplied effect values for relics/talismans
                           <span className={isRelic ? 'text-yellow-400' : 'text-purple-400'}>
-                            {Object.entries(item.baseTrinket.effects)
-                              .filter(([, v]) => typeof v === 'number')
-                              .map(([key, value]) => {
-                                const multipliedValue = (value as number) * item.multiplier * 100;
-                                const label = key.replace(/Bonus$/i, '').replace(/([A-Z])/g, ' $1').trim().toLowerCase();
-                                return `+${multipliedValue.toFixed(0)}% ${label}`;
-                              })
-                              .join(', ')}
-                            {' '}({item.multiplier}x)
+                            {(() => {
+                              const isYates = item.baseTrinket.id === 'yates_totem';
+                              const effects: TrinketEffects = isYates
+                                ? (isRelic ? YATES_TOTEM_RELIC_EFFECTS : YATES_TOTEM_TALISMAN_EFFECTS)
+                                : item.baseTrinket.effects;
+                              const mult = isYates ? 1 : item.multiplier;
+                              const entries = Object.entries(effects).filter(([, v]) => typeof v === 'number' && v !== 0);
+                              const statEntries = entries.filter(([k]) => k !== 'bankInterestBonus');
+                              const bankEntry = entries.find(([k]) => k === 'bankInterestBonus');
+                              const allSame = statEntries.length > 1 && statEntries.every(([, v]) => v === statEntries[0][1]);
+                              const parts: string[] = [];
+                              if (allSame && statEntries.length > 0) {
+                                parts.push(`+${((statEntries[0][1] as number) * mult * 100).toFixed(0)}% everything`);
+                              } else {
+                                for (const [key, value] of statEntries) {
+                                  const label = key.replace(/Bonus$/i, '').replace(/([A-Z])/g, ' $1').trim().toLowerCase();
+                                  parts.push(`+${((value as number) * mult * 100).toFixed(0)}% ${label}`);
+                                }
+                              }
+                              if (bankEntry) parts.push(`+${Math.round(((bankEntry[1] as number) - 1) * 100)}% bank interest`);
+                              return parts.join(', ');
+                            })()}
                           </span>
                         ) : (
                           item.baseTrinket.description

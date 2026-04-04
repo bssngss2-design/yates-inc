@@ -137,7 +137,7 @@ export default function RockSelector({ onClose }: RockSelectorProps) {
                     }}
                     title={gameState.wtBanned && !gameState.wtRedeemed ? '🧙 A familiar presence...' : undefined}
                   >
-                    {formatNumber(getScaledRockHP(rock.clicksToBreak, gameState.prestigeCount))} HP
+                    {formatNumber(getScaledRockHP(rock.clicksToBreak, gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0))} HP
                   </p>
                 </button>
               );

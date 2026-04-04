@@ -154,7 +154,7 @@ export default function GameTerminal({ isOpen, onClose, onMine }: GameTerminalPr
         const highestOwned = gameState.ownedPickaxeIds.length > 0 ? Math.max(...gameState.ownedPickaxeIds) : 0;
         const nextPickaxe = PICKAXES.find(p => p.id === highestOwned + 1);
         if (nextPickaxe) {
-          const scaledPrice = Math.floor(nextPickaxe.price * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode));
+          const scaledPrice = Math.floor(nextPickaxe.price * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0));
           if (gameState.yatesDollars >= scaledPrice) {
             buyPickaxe(nextPickaxe.id);
           }

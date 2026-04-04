@@ -30,8 +30,9 @@ import TempleModal from './TempleModal';
 import WizardTowerSidebar from './WizardTowerSidebar';
 import BankModal from './BankModal';
 import ShadySamModal from './ShadySamModal';
+import SideLevelPanel from './SideLevelPanel';
 import { MINER_BASE_DAMAGE, getScaledRockHP, BUILDINGS, BuildingType, getMinerCost } from '@/types/game';
-import { ROCKS, getRockById } from '@/lib/gameData';
+import { ROCKS } from '@/lib/gameData';
 
 interface MiningGameProps {
   onExit?: () => void;
@@ -88,7 +89,7 @@ export default function MiningGame({ onExit }: MiningGameProps) {
   const isEmployee = !!employee?.id && /^\d+$/.test(employee.id);
 
   // Calculate scaled autoclicker cost (10% increase every 5 prestiges + hard mode multiplier)
-  const scaledAutoclickerCost = Math.floor(AUTOCLICKER_COST * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode));
+  const scaledAutoclickerCost = Math.floor(AUTOCLICKER_COST * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0));
 
   const [moneyPopups, setMoneyPopups] = useState<MoneyPopup[]>([]);
   const [particles, setParticles] = useState<Particle[]>([]);
@@ -105,6 +106,7 @@ export default function MiningGame({ onExit }: MiningGameProps) {
   const [showSettings, setShowSettings] = useState(false);
   // Stores moved into GameShop as tabs
   const [showShadySam, setShowShadySam] = useState(false);
+  const [showSideLevel, setShowSideLevel] = useState(false);
   const [confirmingPath, setConfirmingPath] = useState<GamePath>(null);
   const [displayProgress, setDisplayProgress] = useState(0);
   const [rockBroken, setRockBroken] = useState(false);
@@ -175,7 +177,7 @@ export default function MiningGame({ onExit }: MiningGameProps) {
       }, 300);
     } else {
       // Update display progress for click feedback, then reset to let actualProgress take over
-      const scaledMaxHP = getScaledRockHP(currentRock.clicksToBreak, gameState.prestigeCount, gameState.isHardMode);
+      const scaledMaxHP = getScaledRockHP(currentRock.clicksToBreak, gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0);
       const newProgress = ((scaledMaxHP - gameState.currentRockHP + 1) / scaledMaxHP) * 100;
       setDisplayProgress(Math.min(100, newProgress));
       // Reset displayProgress after animation so miners can update the bar via actualProgress
@@ -331,17 +333,14 @@ export default function MiningGame({ onExit }: MiningGameProps) {
     }
   };
 
-  const scaledRockMaxHP = getScaledRockHP(currentRock.clicksToBreak, gameState.prestigeCount, gameState.isHardMode);
+  const scaledRockMaxHP = getScaledRockHP(currentRock.clicksToBreak, gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0);
   const actualProgress = ((scaledRockMaxHP - gameState.currentRockHP) / scaledRockMaxHP) * 100;
   const progressPercent = rockBroken ? 100 : (displayProgress || actualProgress);
   const totalCoupons = gameState.coupons.discount30 + gameState.coupons.discount50 + gameState.coupons.discount100;
 
-  // Calculate actual damage per second for miners (matching miner tick logic)
   const bonuses = getTotalBonuses();
-  const minerRock = getRockById(gameState.currentRockId) || ROCKS[0];
-  // Only use miner-specific bonuses that the actual miner tick uses
   const minerDamageBonus = bonuses.minerDamageBonus + bonuses.minerSpeedBonus;
-  const minerDps = Math.ceil(gameState.minerCount * MINER_BASE_DAMAGE * (1 + minerDamageBonus));
+  const minerDps = Math.max(0, Math.ceil(gameState.minerCount * MINER_BASE_DAMAGE * (1 + minerDamageBonus)));
 
   // Check if player can buy the next pickaxe (sequential order, accounting for path-locked pickaxes)
   const canBuyNextPickaxe = useMemo(() => {
@@ -372,7 +371,7 @@ export default function MiningGame({ onExit }: MiningGameProps) {
     if (!nextPickaxe) return false;
     
     // Can afford it? (with prestige price scaling AND hard mode multiplier)
-    const scaledPrice = Math.floor(nextPickaxe.price * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode));
+    const scaledPrice = Math.floor(nextPickaxe.price * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0));
     return gameState.yatesDollars >= scaledPrice;
   }, [gameState.ownedPickaxeIds, gameState.yatesDollars, gameState.prestigeCount, gameState.chosenPath, gameState.isHardMode]);
 
@@ -746,11 +745,7 @@ export default function MiningGame({ onExit }: MiningGameProps) {
                   <span className="text-[10px] font-bold text-purple-400">Lv.{gameState.prestigeCount} (×{gameState.prestigeMultiplier.toFixed(1)})</span>
                 </div>
               )}
-              {(gameState.rocksMinedCount || 0) < 202 ? (
-                <div className="text-[10px] text-gray-500">🔒 Lv.202 — Change sides</div>
-              ) : (
-                <div className="text-[10px] text-green-400">✅ Lv.202 — Can change sides!</div>
-              )}
+              <div className="text-[10px] text-gray-500">Reach side Lv.100 to switch paths</div>
             </div>
 
             <div className="h-px bg-gray-700/40" />
@@ -795,15 +790,16 @@ export default function MiningGame({ onExit }: MiningGameProps) {
             )}
 
             {/* Bonuses summary */}
-            {(bonuses.moneyBonus > 0 || bonuses.rockDamageBonus > 0 || bonuses.couponBonus > 0) && (
+            {(bonuses.moneyBonus > 0 || bonuses.rockDamageBonus > 0 || bonuses.couponBonus > 0 || bonuses.clickSpeedBonus > 0 || bonuses.minerDamageBonus > 0 || bonuses.minerSpeedBonus > 0) && (
               <div className="flex flex-col gap-1">
                 <span className="text-xs font-bold text-white">Bonuses</span>
                 <div className="space-y-0.5">
                   {bonuses.moneyBonus > 0 && <div className="text-[11px] text-green-400">💰 +{(bonuses.moneyBonus * 100).toFixed(0)}% Money</div>}
                   {bonuses.rockDamageBonus > 0 && <div className="text-[11px] text-red-400">💥 +{(bonuses.rockDamageBonus * 100).toFixed(0)}% Damage</div>}
-                  {bonuses.clickSpeedBonus > 0 && <div className="text-[11px] text-cyan-400">⚡ +{(bonuses.clickSpeedBonus * 100).toFixed(0)}% Speed</div>}
+                  {bonuses.clickSpeedBonus > 0 && <div className="text-[11px] text-cyan-400">⚡ +{(bonuses.clickSpeedBonus * 100).toFixed(0)}% Click Speed</div>}
                   {bonuses.couponBonus > 0 && <div className="text-[11px] text-amber-400">🎟️ +{(bonuses.couponBonus * 100).toFixed(0)}% Lottery</div>}
-                  {bonuses.minerDamageBonus > 0 && <div className="text-[11px] text-orange-400">⛏️ +{(bonuses.minerDamageBonus * 100).toFixed(0)}% Miners</div>}
+                  {bonuses.minerDamageBonus > 0 && <div className="text-[11px] text-orange-400">⛏️ +{(bonuses.minerDamageBonus * 100).toFixed(0)}% Miner Dmg</div>}
+                  {bonuses.minerSpeedBonus > 0 && <div className="text-[11px] text-sky-400">🏃 +{(bonuses.minerSpeedBonus * 100).toFixed(0)}% Miner Spd</div>}
                 </div>
               </div>
             )}
@@ -818,11 +814,14 @@ export default function MiningGame({ onExit }: MiningGameProps) {
               )}
               <div className="flex gap-2">
                 <button
-                  onClick={() => needsPathChoice && setConfirmingPath('light')}
-                  disabled={!needsPathChoice}
+                  onClick={() => {
+                    if (needsPathChoice) setConfirmingPath('light');
+                    else if (gameState.chosenPath === 'light') setShowSideLevel(true);
+                  }}
+                  disabled={!needsPathChoice && gameState.chosenPath !== 'light'}
                   className={`flex-1 flex flex-col items-center gap-1 rounded-lg border px-2 py-2 transition-all ${
                     gameState.chosenPath === 'light'
-                      ? 'border-yellow-600/50 bg-yellow-900/20'
+                      ? 'border-yellow-600/50 bg-yellow-900/20 hover:border-yellow-400 hover:bg-yellow-900/30 cursor-pointer'
                       : needsPathChoice
                         ? 'border-yellow-600/40 bg-yellow-900/10 hover:border-yellow-400 hover:bg-yellow-900/30 hover:scale-105 cursor-pointer'
                         : 'border-gray-700/30 bg-gray-800/30 opacity-50 cursor-default'
@@ -831,15 +830,18 @@ export default function MiningGame({ onExit }: MiningGameProps) {
                   <span className="text-base">☀️</span>
                   <span className={`text-[10px] ${gameState.chosenPath === 'light' ? 'text-yellow-300' : needsPathChoice ? 'text-yellow-400' : 'text-gray-500'}`}>Light</span>
                   <span className={`text-xs font-bold ${gameState.chosenPath === 'light' ? 'text-yellow-400' : 'text-gray-600'}`}>
-                    {gameState.chosenPath === 'light' ? `Lv.${gameState.prestigeCount}` : needsPathChoice ? 'Pick' : 'Locked'}
+                    {gameState.chosenPath === 'light' ? `Lv.${gameState.sideLevel || 1}` : needsPathChoice ? 'Pick' : 'Locked'}
                   </span>
                 </button>
                 <button
-                  onClick={() => needsPathChoice && setConfirmingPath('darkness')}
-                  disabled={!needsPathChoice}
+                  onClick={() => {
+                    if (needsPathChoice) setConfirmingPath('darkness');
+                    else if (gameState.chosenPath === 'darkness') setShowSideLevel(true);
+                  }}
+                  disabled={!needsPathChoice && gameState.chosenPath !== 'darkness'}
                   className={`flex-1 flex flex-col items-center gap-1 rounded-lg border px-2 py-2 transition-all ${
                     gameState.chosenPath === 'darkness'
-                      ? 'border-purple-600/50 bg-purple-900/20'
+                      ? 'border-purple-600/50 bg-purple-900/20 hover:border-purple-400 hover:bg-purple-900/30 cursor-pointer'
                       : needsPathChoice
                         ? 'border-purple-600/40 bg-purple-900/10 hover:border-purple-400 hover:bg-purple-900/30 hover:scale-105 cursor-pointer'
                         : 'border-gray-700/30 bg-gray-800/30 opacity-50 cursor-default'
@@ -848,7 +850,7 @@ export default function MiningGame({ onExit }: MiningGameProps) {
                   <span className="text-base">🌙</span>
                   <span className={`text-[10px] ${gameState.chosenPath === 'darkness' ? 'text-purple-300' : needsPathChoice ? 'text-purple-400' : 'text-gray-500'}`}>Darkness</span>
                   <span className={`text-xs font-bold ${gameState.chosenPath === 'darkness' ? 'text-purple-400' : 'text-gray-600'}`}>
-                    {gameState.chosenPath === 'darkness' ? `Lv.${gameState.prestigeCount}` : needsPathChoice ? 'Pick' : 'Locked'}
+                    {gameState.chosenPath === 'darkness' ? `Lv.${gameState.sideLevel || 1}` : needsPathChoice ? 'Pick' : 'Locked'}
                   </span>
                 </button>
               </div>
@@ -1263,6 +1265,7 @@ export default function MiningGame({ onExit }: MiningGameProps) {
       <WizardTowerSidebar isOpen={showWizardFromPanel} onClose={() => setShowWizardFromPanel(false)} />
       {showBankFromPanel && <BankModal onClose={() => setShowBankFromPanel(false)} />}
       {showShadySam && <ShadySamModal onClose={() => setShowShadySam(false)} />}
+      <SideLevelPanel isOpen={showSideLevel} onClose={() => setShowSideLevel(false)} />
 
       {/* CSS Animations */}
       <style jsx global>{`

@@ -39,7 +39,8 @@ type ShopTab = 'pickaxes' | 'miners' | 'buildings' | 'upgrades' | 'powerups' | '
 export default function GameShop({ onClose }: GameShopProps) {
   const { 
     gameState, 
-    buyPickaxe, 
+    buyPickaxe,
+    buyAllAffordablePickaxes,
     canAffordPickaxe, 
     ownsPickaxe, 
     equipPickaxe,
@@ -501,13 +502,23 @@ export default function GameShop({ onClose }: GameShopProps) {
           {/* PICKAXES TAB — Compact list rows */}
           {activeTab === 'pickaxes' && (
             <div className="space-y-1.5">
+              <button
+                onClick={() => {
+                  const count = buyAllAffordablePickaxes();
+                  if (count > 0) showToast(`⛏️ Bought ${count} pickaxe${count > 1 ? 's' : ''}!`, 'success');
+                  else showToast('No pickaxes available to buy', 'error');
+                }}
+                className="w-full py-2 px-3 rounded-lg text-xs font-bold bg-gradient-to-r from-amber-700 to-amber-600 hover:from-amber-600 hover:to-amber-500 text-white transition-all touch-manipulation mb-2"
+              >
+                ⛏️ Buy All Affordable
+              </button>
               {PICKAXES.filter(p => shouldShowPickaxe(p.id)).map((pickaxe) => {
                 const owned = ownsPickaxe(pickaxe.id);
                 const equipped = currentPickaxe.id === pickaxe.id;
                 const canAfford = canAffordPickaxe(pickaxe.id);
                 const pathLabel = getPathLabel(pickaxe.id);
                 const canBuyForPath = canBuyPickaxeForPath(pickaxe.id);
-                const scaledPrice = Math.floor(pickaxe.price * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode));
+                const scaledPrice = Math.floor(pickaxe.price * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0));
                 
                 const regularOwnedIds = gameState.ownedPickaxeIds.filter(id => id !== YATES_PICKAXE_ID);
                 const highestOwnedId = regularOwnedIds.length > 0 ? Math.max(...regularOwnedIds) : 0;

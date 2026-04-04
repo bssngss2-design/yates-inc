@@ -56,6 +56,11 @@ export interface UserGameData {
   title_win_counts?: Record<string, number>;
   // Path system
   chosen_path?: string | null;
+  // Side levels
+  side_level?: number;
+  side_level_buffs?: string;
+  total_golden_cookies_collected?: number;
+  total_miners_sacrificed?: number;
   // Tax system (1QI+ wealth tax)
   last_tax_time?: number | null;
   // Loans
@@ -248,6 +253,10 @@ export async function saveUserGameData(data: Partial<UserGameData> & { user_id: 
       equipped_title_ids: data.equipped_title_ids,
       title_win_counts: data.title_win_counts,
       chosen_path: data.chosen_path,
+      side_level: data.side_level,
+      ...(data.side_level_buffs ? { side_level_buffs: data.side_level_buffs } : {}),
+      total_golden_cookies_collected: data.total_golden_cookies_collected,
+      total_miners_sacrificed: data.total_miners_sacrificed,
       last_tax_time: safeBigInt(data.last_tax_time),
       total_playtime_seconds: safeBigInt(data.total_playtime_seconds),
       ...(data.owned_premium_product_ids?.length ? { owned_premium_product_ids: data.owned_premium_product_ids } : {}),
@@ -606,6 +615,10 @@ export function keepaliveSave(data: Partial<UserGameData> & { user_id: string; u
     equipped_title_ids: data.equipped_title_ids,
     title_win_counts: data.title_win_counts,
     chosen_path: data.chosen_path,
+    side_level: data.side_level,
+    ...(data.side_level_buffs ? { side_level_buffs: data.side_level_buffs } : {}),
+    total_golden_cookies_collected: data.total_golden_cookies_collected,
+    total_miners_sacrificed: data.total_miners_sacrificed,
     last_tax_time: safeBigInt(data.last_tax_time),
     total_playtime_seconds: safeBigInt(data.total_playtime_seconds),
     ...(data.owned_premium_product_ids?.length ? { owned_premium_product_ids: data.owned_premium_product_ids } : {}),

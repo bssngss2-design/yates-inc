@@ -53,6 +53,73 @@ export interface ShopStock {
 
 export type GamePath = 'light' | 'darkness' | null;
 
+// =====================
+// SIDE LEVELS SYSTEM (Light/Dark 1-100)
+// =====================
+
+export interface SideLevelRequirements {
+  totalMinersSacrificed: number;
+  miningLevelReached: number;
+  totalMoneyEarned: number;
+  // Light-only
+  prestigeCount?: number;
+  goldenCookiesCollected?: number;
+  zeroMinersRequired?: boolean;
+}
+
+export const DARK_SIDE_MAX_REQUIREMENTS = {
+  totalMinersSacrificed: 40000,
+  miningLevelReached: 2000,
+  totalMoneyEarned: 67e15, // 67QI
+};
+
+export const LIGHT_SIDE_MAX_REQUIREMENTS = {
+  prestigeCount: 3,
+  goldenCookiesCollected: 20,
+  totalMoneyEarned: 100e15, // 100QI
+};
+
+export function getDarkSideLevelRequirements(level: number): SideLevelRequirements {
+  return {
+    totalMinersSacrificed: Math.ceil((DARK_SIDE_MAX_REQUIREMENTS.totalMinersSacrificed / 100) * level),
+    miningLevelReached: Math.ceil((DARK_SIDE_MAX_REQUIREMENTS.miningLevelReached / 100) * level),
+    totalMoneyEarned: (DARK_SIDE_MAX_REQUIREMENTS.totalMoneyEarned / 100) * level,
+  };
+}
+
+export function getLightSideLevelRequirements(level: number): SideLevelRequirements & { prestigeCount: number; goldenCookiesCollected: number; zeroMinersRequired: boolean } {
+  const prestigeReq = level <= 10 ? Math.min(level, 3) : 3;
+  return {
+    totalMinersSacrificed: 0,
+    miningLevelReached: 0,
+    totalMoneyEarned: (LIGHT_SIDE_MAX_REQUIREMENTS.totalMoneyEarned / 100) * level,
+    prestigeCount: prestigeReq,
+    goldenCookiesCollected: Math.ceil((LIGHT_SIDE_MAX_REQUIREMENTS.goldenCookiesCollected / 100) * level),
+    zeroMinersRequired: true,
+  };
+}
+
+export const SIDE_LEVEL_MAX = 100;
+
+const SIDE_LEVEL_BUFF_STATS = ['moneyBonus', 'rockDamageBonus', 'clickSpeedBonus', 'couponBonus', 'minerSpeedBonus', 'minerDamageBonus'] as const;
+
+export function rollSideLevelBuff(): { stat: string; amount: number } {
+  const stat = SIDE_LEVEL_BUFF_STATS[Math.floor(Math.random() * SIDE_LEVEL_BUFF_STATS.length)];
+  return { stat, amount: 0.10 }; // +10%
+}
+
+export function getSideLevelBankInterestRate(sideLevel: number): number {
+  return sideLevel >= 25 ? 0.01 : BANK_BASE_INTEREST_RATE;
+}
+
+export function getSideLevelPickaxePriceMultiplier(sideLevel: number): number {
+  return sideLevel >= 30 ? 3.0 : 1.0; // 200% inflated = 3x price
+}
+
+export function getSideLevelRockHPMultiplier(sideLevel: number): number {
+  return sideLevel >= 45 ? 1.5 : 1.0; // 50% more health
+}
+
 export interface SacrificeBuff {
   moneyBonus: number;
   pcxDamageBonus: number;
@@ -134,7 +201,11 @@ export interface ShadySamSwap {
   amount: number; // e.g. 1.0 = 100%
 }
 
-export const SHADY_SAM_SWAP_COST = 1e15; // 1Q per swap
+export const SHADY_SAM_SWAP_COST = 1e15; // legacy flat cost, kept for reference
+export function getShadySamSwapCost(percentAmount: number): number {
+  if (percentAmount <= 0) return 0;
+  return Math.floor(1000 * Math.pow(percentAmount, 2.6));
+}
 
 export interface GameState {
   yatesDollars: number;
@@ -200,6 +271,10 @@ export interface GameState {
   // LIGHT VS DARKNESS PATH SYSTEM
   // =====================
   chosenPath: GamePath;              // Player's chosen path after first prestige
+  sideLevel: number;                 // Current side level (1-100)
+  sideLevelBuffs: Record<string, number>; // Permanent buffs from side level-ups (stat key -> bonus amount)
+  totalGoldenCookiesCollected: number; // All-time golden cookies collected
+  totalMinersSacrificed: number;     // All-time miners sacrificed
   goldenCookieRitualActive: boolean; // Has completed the ritual to spawn golden cookies
   sacrificeBuff: SacrificeBuff | null; // Current active sacrifice buff
   adminCommandsUntil: number | null; // Timestamp when admin commands expire (from golden cookie)
@@ -838,7 +913,7 @@ export const YATES_TOTEM_TALISMAN_EFFECTS: TrinketEffects = {
 
 export const MINER_BASE_COST = 1000; // $1k for first miner
 export const MINER_COST_MULTIPLIER = 1.0395; // Scales to ~$10B for miner 420
-export const MINER_MAX_COUNT = 420;
+export const MINER_MAX_COUNT = Infinity;
 export const MINER_TICK_INTERVAL = 1000; // 1 second between miner ticks
 export const MINER_BASE_DAMAGE = 1190; // ~500k total damage at 420 miners (500k/420 ≈ 1190)
 export const MINER_VISIBLE_MAX = 100; // Max visible sprites
@@ -846,11 +921,13 @@ export const MINER_VISIBLE_MAX = 100; // Max visible sprites
 // Rock health scaling per prestige (23% increase per prestige)
 export const ROCK_HEALTH_PRESTIGE_SCALING = 0.23;
 
-// Get scaled rock HP based on prestige count (+40% after prestige 40, +30% in Hard Mode)
-export function getScaledRockHP(baseHP: number, prestigeCount: number, isHardMode: boolean = false): number {
-  // In Hard Mode: 30% more HP base, and 48% higher scaling instead of 23%
+// Get scaled rock HP based on prestige count (+40% after prestige 40, +30% in Hard Mode, +50% at side level 45+)
+export function getScaledRockHP(baseHP: number, prestigeCount: number, isHardMode: boolean = false, sideLevel: number = 0): number {
   const scaling = isHardMode ? HARD_MODE_MODIFIERS.rockHpScalingMultiplier - 1 : ROCK_HEALTH_PRESTIGE_SCALING;
   let base = Math.ceil(baseHP * (1 + prestigeCount * scaling));
+  
+  // Side level 45+: 50% more rock health
+  base = Math.ceil(base * getSideLevelRockHPMultiplier(sideLevel));
   
   // Apply Hard Mode 30% HP boost
   if (isHardMode) {
@@ -862,10 +939,12 @@ export function getScaledRockHP(baseHP: number, prestigeCount: number, isHardMod
 }
 
 // Get prestige price multiplier (10% increase every 5 prestiges, +40% after prestige 40, +41% in Hard Mode)
-export function getPrestigePriceMultiplier(prestigeCount: number, isHardMode: boolean = false): number {
+export function getPrestigePriceMultiplier(prestigeCount: number, isHardMode: boolean = false, sideLevel: number = 0): number {
   let base = Math.pow(1.10, Math.floor(prestigeCount / 5));
   
-  // Apply Hard Mode 41% price increase
+  // Side level 30+: 200% price inflation (3x)
+  base *= getSideLevelPickaxePriceMultiplier(sideLevel);
+
   if (isHardMode) {
     base *= HARD_MODE_MODIFIERS.priceMultiplier;
   }
@@ -2187,9 +2266,10 @@ export function getMineEfficiencyBonus(mineCount: number): number {
 
 // Calculate bank interest based on deposit time
 // interestMultiplier: multiplier from trinkets (e.g., 10 for void_merchants_pact = 10x interest)
-export function calculateBankInterest(depositAmount: number, depositTimestamp: number, now: number, interestMultiplier: number = 1): number {
+export function calculateBankInterest(depositAmount: number, depositTimestamp: number, now: number, interestMultiplier: number = 1, sideLevel: number = 0): number {
   const minutesDeposited = (now - depositTimestamp) / 60000;
-  const baseInterestRate = BANK_BASE_INTEREST_RATE * interestMultiplier;
+  const baseRate = getSideLevelBankInterestRate(sideLevel);
+  const baseInterestRate = baseRate * interestMultiplier;
   const interestRate = baseInterestRate + (minutesDeposited * BANK_TIME_MULTIPLIER);
   return Math.floor(depositAmount * interestRate * minutesDeposited);
 }

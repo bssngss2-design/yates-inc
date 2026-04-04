@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Image from 'next/image';
 import { useGame } from '@/contexts/GameContext';
 import { useBudget } from '@/contexts/BudgetContext';
-import { BANK_BASE_INTEREST_RATE, BANK_TIERS, BANK_MAX_TIER, getBankDepositCap, TRINKETS, YATES_TOTEM_RELIC_EFFECTS, YATES_TOTEM_TALISMAN_EFFECTS, LOAN_MAX_AMOUNT, LOAN_DAILY_INTEREST_RATE, LOAN_OPEN_TAB_BONUS_RATE } from '@/types/game';
+import { BANK_TIERS, BANK_MAX_TIER, getBankDepositCap, TRINKETS, YATES_TOTEM_RELIC_EFFECTS, YATES_TOTEM_TALISMAN_EFFECTS, LOAN_MAX_AMOUNT, LOAN_DAILY_INTEREST_RATE, LOAN_OPEN_TAB_BONUS_RATE, getSideLevelBankInterestRate } from '@/types/game';
 
 interface BankModalProps {
   onClose: () => void;
@@ -65,7 +65,7 @@ export default function BankModal({ onClose }: BankModalProps) {
   };
 
   const interestMultiplier = getBankInterestMultiplier();
-  const effectiveInterestRate = BANK_BASE_INTEREST_RATE * interestMultiplier;
+  const effectiveInterestRate = getSideLevelBankInterestRate(gameState.sideLevel || 0) * interestMultiplier;
 
   const formatNumber = (num: number): string => {
     if (!isFinite(num)) return '∞';

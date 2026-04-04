@@ -151,10 +151,8 @@ export default function GameTerminal({ isOpen, onClose, onMine }: GameTerminalPr
         // Auto-click
         onMine();
         
-        // Auto-buy next pickaxe if affordable (skip Yates pickaxe ID 26 - Secret challenge only)
-        const regularOwnedIds = gameState.ownedPickaxeIds.filter(id => id !== 26);
-        const highestOwned = regularOwnedIds.length > 0 ? Math.max(...regularOwnedIds) : 0;
-        const nextPickaxe = PICKAXES.find(p => p.id === highestOwned + 1 && p.id !== 26);
+        const highestOwned = gameState.ownedPickaxeIds.length > 0 ? Math.max(...gameState.ownedPickaxeIds) : 0;
+        const nextPickaxe = PICKAXES.find(p => p.id === highestOwned + 1);
         if (nextPickaxe) {
           const scaledPrice = Math.floor(nextPickaxe.price * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode));
           if (gameState.yatesDollars >= scaledPrice) {

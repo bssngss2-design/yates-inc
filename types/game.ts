@@ -103,6 +103,39 @@ export const YATES_PICKAXE_ID = 26; // Only from Golden Cookie
 export const DARKNESS_ROCK_IDS = [21, 24]; // Devil, Moon
 export const LIGHT_ROCK_IDS = [20]; // Angel rock
 
+// =====================
+// SHADY SAM SYSTEM (Darkness path only)
+// =====================
+
+export type ShadySamStat = 'couponLuck' | 'minerSpeed' | 'clickDamage' | 'pcxDamage' | 'moneyMultiplier' | 'minerDamage';
+
+export const SHADY_SAM_STAT_LABELS: Record<ShadySamStat, string> = {
+  couponLuck: 'Coupon Luck',
+  minerSpeed: 'Miner Speed',
+  clickDamage: 'Click Speed',
+  pcxDamage: 'Pickaxe Damage',
+  moneyMultiplier: 'Money',
+  minerDamage: 'Miner Damage',
+};
+
+export const SHADY_SAM_STAT_ICONS: Record<ShadySamStat, string> = {
+  couponLuck: '🎟️',
+  minerSpeed: '⚡',
+  clickDamage: '🖱️',
+  pcxDamage: '⛏️',
+  moneyMultiplier: '💰',
+  minerDamage: '💪',
+};
+
+export interface ShadySamSwap {
+  id: string;
+  debuffStat: ShadySamStat;
+  buffStat: ShadySamStat;
+  amount: number; // e.g. 1.0 = 100%
+}
+
+export const SHADY_SAM_SWAP_COST = 1e15; // 1Q per swap
+
 export interface GameState {
   yatesDollars: number;
   totalClicks: number;
@@ -208,6 +241,10 @@ export interface GameState {
   wtRedeemed: boolean;                       // Completed redemption path after ban
   wtDialogCompleted: boolean;                // Browse More button disappears after deal/redemption
   wtMoneyTax: number;                        // Percentage of money earned that goes to WT (0, 0.05, 0.15, 0.25)
+  // =====================
+  // SHADY SAM (Darkness path only — stat swaps)
+  // =====================
+  shadySamSwaps: ShadySamSwap[];
   // =====================
   // PREMIUM PRODUCTS (from /products/premium shop)
   // =====================

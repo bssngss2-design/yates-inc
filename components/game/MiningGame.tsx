@@ -29,6 +29,7 @@ import BuffBar from './BuffBar';
 import TempleModal from './TempleModal';
 import WizardTowerSidebar from './WizardTowerSidebar';
 import BankModal from './BankModal';
+import ShadySamModal from './ShadySamModal';
 import { MINER_BASE_DAMAGE, getScaledRockHP, BUILDINGS, BuildingType, getMinerCost } from '@/types/game';
 import { ROCKS, getRockById } from '@/lib/gameData';
 
@@ -103,6 +104,7 @@ export default function MiningGame({ onExit }: MiningGameProps) {
   const [showSacrifice, setShowSacrifice] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   // Stores moved into GameShop as tabs
+  const [showShadySam, setShowShadySam] = useState(false);
   const [confirmingPath, setConfirmingPath] = useState<GamePath>(null);
   const [displayProgress, setDisplayProgress] = useState(0);
   const [rockBroken, setRockBroken] = useState(false);
@@ -1136,6 +1138,17 @@ export default function MiningGame({ onExit }: MiningGameProps) {
               <span className="text-lg">⚙️</span>
               <span className="text-[10px] font-bold text-white uppercase tracking-wider">Settings</span>
             </button>
+
+            {/* Shady Sam (Darkness path only) */}
+            {gameState.chosenPath === 'darkness' && (
+              <button
+                onClick={() => setShowShadySam(true)}
+                className="flex h-14 w-28 flex-col items-center justify-center gap-0.5 rounded-lg border-r-4 border-b-4 border-purple-900 bg-gray-800 hover:bg-purple-900 active:border-r-0 active:border-b-0 active:translate-x-1 active:translate-y-1 transition-all"
+              >
+                <Image src="/game/buildings/shadysam.png" alt="Sam" width={28} height={28} style={{ imageRendering: 'pixelated' }} unoptimized />
+                <span className="text-[10px] font-bold text-purple-300 uppercase tracking-wider">Sam</span>
+              </button>
+            )}
           </div>
 
           {/* New Pickaxe notification */}
@@ -1249,6 +1262,7 @@ export default function MiningGame({ onExit }: MiningGameProps) {
       {showTempleFromPanel && <TempleModal onClose={() => setShowTempleFromPanel(false)} />}
       <WizardTowerSidebar isOpen={showWizardFromPanel} onClose={() => setShowWizardFromPanel(false)} />
       {showBankFromPanel && <BankModal onClose={() => setShowBankFromPanel(false)} />}
+      {showShadySam && <ShadySamModal onClose={() => setShowShadySam(false)} />}
 
       {/* CSS Animations */}
       <style jsx global>{`

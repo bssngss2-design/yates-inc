@@ -14,6 +14,8 @@ import {
   // Path system
   GamePath, SacrificeBuff, SACRIFICE_BUFF_TIERS,
   DARKNESS_PICKAXE_IDS, LIGHT_PICKAXE_IDS, YATES_PICKAXE_ID,
+  // Shady Sam
+  ShadySamSwap, ShadySamStat, SHADY_SAM_SWAP_COST,
   // Rock health scaling
   getScaledRockHP,
   // Building system
@@ -185,6 +187,9 @@ interface GameContextType {
   // Miner sacrifice (Darkness path)
   sacrificeMiners: (count: number) => boolean;
   getSacrificeBuffForCount: (count: number) => { buff: SacrificeBuff; duration: number } | null;
+  // Shady Sam (Darkness path)
+  addShadySamSwap: (debuffStat: ShadySamStat, buffStat: ShadySamStat, amount: number) => boolean;
+  removeShadySamSwap: (swapId: string) => void;
   // Golden Cookie ritual (Darkness path)
   activateGoldenCookieRitual: () => boolean;
   canActivateRitual: () => boolean;
@@ -357,6 +362,8 @@ const defaultGameState: GameState = {
   wtRedeemed: false,
   wtDialogCompleted: false,
   wtMoneyTax: 0,
+  // Shady Sam
+  shadySamSwaps: [],
   // Premium products
   ownedPremiumProductIds: [],
   // Hard Mode
@@ -822,6 +829,13 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
                 loanAmount: (supabaseData as unknown as { loan_amount?: number }).loan_amount ?? prev.loanAmount,
                 loanTakenAt: (supabaseData as unknown as { loan_taken_at?: number | null }).loan_taken_at ?? prev.loanTakenAt,
                 loanLastAccrualAt: (supabaseData as unknown as { loan_last_accrual_at?: number | null }).loan_last_accrual_at ?? prev.loanLastAccrualAt,
+                // Shady Sam
+                shadySamSwaps: (() => {
+                  try {
+                    const raw = (supabaseData as unknown as { shady_sam_swaps?: string }).shady_sam_swaps;
+                    return raw ? JSON.parse(raw) : prev.shadySamSwaps;
+                  } catch { return prev.shadySamSwaps; }
+                })(),
                 // Playtime tracking (use max to never lose playtime)
                 totalPlaytimeSeconds: Math.max(
                   prev.totalPlaytimeSeconds || 0,
@@ -1111,19 +1125,13 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       setGameState(prev => {
         if (prev.minerCount <= 0 || prev.isBlocked) return prev;
         
-        // Calculate bonuses from trinkets and prestige upgrades inline
-        let bonuses = {
-          moneyBonus: 0,
-          minerDamageBonus: 0,
-          minerSpeedBonus: 0,
-        };
+        let bonuses = { moneyBonus: 0, minerDamageBonus: 0, minerSpeedBonus: 0 };
+        let yatesOv = { moneyBonus: 0, minerDamageBonus: 0, minerSpeedBonus: 0 };
         
-        // Trinket bonuses (including relics/talismans)
         for (const itemId of prev.equippedTrinketIds) {
           const isRelic = itemId.endsWith('_relic');
           const isTalisman = itemId.endsWith('_talisman');
           const baseId = isRelic ? itemId.replace('_relic', '') : isTalisman ? itemId.replace('_talisman', '') : itemId;
-
           const trinket = TRINKETS.find(t => t.id === baseId);
           if (trinket) {
             const useOverride = baseId === 'yates_totem' && (isRelic || isTalisman);
@@ -1135,23 +1143,21 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
               if (isRelic) multiplier = RELIC_MULTIPLIERS[trinket.rarity] || 1;
               else if (isTalisman) multiplier = TALISMAN_MULTIPLIERS[trinket.rarity] || 1;
             }
-            bonuses.moneyBonus += ((e.moneyBonus || 0) + (e.allBonus || 0) + (e.minerMoneyBonus || 0)) * multiplier;
-            bonuses.minerDamageBonus += ((e.minerDamageBonus || 0) + (e.allBonus || 0)) * multiplier;
-            bonuses.minerSpeedBonus += ((e.minerSpeedBonus || 0) + (e.allBonus || 0)) * multiplier;
+            const tgt = useOverride ? yatesOv : bonuses;
+            tgt.moneyBonus += ((e.moneyBonus || 0) + (e.allBonus || 0) + (e.minerMoneyBonus || 0)) * multiplier;
+            tgt.minerDamageBonus += ((e.minerDamageBonus || 0) + (e.allBonus || 0)) * multiplier;
+            tgt.minerSpeedBonus += ((e.minerSpeedBonus || 0) + (e.allBonus || 0)) * multiplier;
           }
         }
         
-        // Trinket multiplier from prestige upgrades
         let trinketMultiplier = 1.0;
         for (const upgradeId of prev.ownedPrestigeUpgradeIds) {
           const upgrade = PRESTIGE_UPGRADES.find(u => u.id === upgradeId);
-          if (upgrade?.effects.trinketBonus) {
-            trinketMultiplier += upgrade.effects.trinketBonus;
-          }
+          if (upgrade?.effects.trinketBonus) trinketMultiplier += upgrade.effects.trinketBonus;
         }
-        bonuses.moneyBonus *= trinketMultiplier;
-        bonuses.minerDamageBonus *= trinketMultiplier;
-        bonuses.minerSpeedBonus *= trinketMultiplier;
+        bonuses.moneyBonus = bonuses.moneyBonus * trinketMultiplier + yatesOv.moneyBonus;
+        bonuses.minerDamageBonus = bonuses.minerDamageBonus * trinketMultiplier + yatesOv.minerDamageBonus;
+        bonuses.minerSpeedBonus = bonuses.minerSpeedBonus * trinketMultiplier + yatesOv.minerSpeedBonus;
         
         // Prestige upgrade bonuses
         for (const upgradeId of prev.ownedPrestigeUpgradeIds) {
@@ -1274,16 +1280,15 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         const mineCount = prev.buildings.mine.count;
         const rock = getRockById(prev.currentRockId) || ROCKS[0];
         
-        // Calculate bonuses
         let moneyBonus = 0;
         let damageBonus = 0;
+        let yOvMoney = 0;
+        let yOvDamage = 0;
         
-        // Trinket bonuses (including relics/talismans)
         for (const itemId of prev.equippedTrinketIds) {
           const isRelic = itemId.endsWith('_relic');
           const isTalisman = itemId.endsWith('_talisman');
           const baseId = isRelic ? itemId.replace('_relic', '') : isTalisman ? itemId.replace('_talisman', '') : itemId;
-
           const trinket = TRINKETS.find(t => t.id === baseId);
           if (trinket) {
             const useOverride = baseId === 'yates_totem' && (isRelic || isTalisman);
@@ -1295,10 +1300,17 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
               if (isRelic) multiplier = RELIC_MULTIPLIERS[trinket.rarity] || 1;
               else if (isTalisman) multiplier = TALISMAN_MULTIPLIERS[trinket.rarity] || 1;
             }
-            moneyBonus += ((e.moneyBonus || 0) + (e.allBonus || 0)) * multiplier;
-            damageBonus += ((e.minerDamageBonus || 0) + (e.allBonus || 0)) * multiplier;
+            if (useOverride) {
+              yOvMoney += ((e.moneyBonus || 0) + (e.allBonus || 0)) * multiplier;
+              yOvDamage += ((e.minerDamageBonus || 0) + (e.allBonus || 0)) * multiplier;
+            } else {
+              moneyBonus += ((e.moneyBonus || 0) + (e.allBonus || 0)) * multiplier;
+              damageBonus += ((e.minerDamageBonus || 0) + (e.allBonus || 0)) * multiplier;
+            }
           }
         }
+        moneyBonus += yOvMoney;
+        damageBonus += yOvDamage;
         
         // Prestige upgrade bonuses
         for (const upgradeId of prev.ownedPrestigeUpgradeIds) {
@@ -1678,14 +1690,13 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       minerSpeedBonus: 0,
       minerDamageBonus: 0,
     };
+
+    // Yates Totem overrides are final values — kept separate so trinketMultiplier doesn't inflate them
+    let yatesOverride = { moneyBonus: 0, rockDamageBonus: 0, clickSpeedBonus: 0, couponBonus: 0, minerSpeedBonus: 0, minerDamageBonus: 0 };
     
-    // First, calculate trinket bonuses (including relics and talismans)
     for (const itemId of gameState.equippedTrinketIds) {
-      // Check if this is a relic or talisman (ends with _relic or _talisman)
       const isRelic = itemId.endsWith('_relic');
       const isTalisman = itemId.endsWith('_talisman');
-      
-      // Get base trinket ID by removing _relic or _talisman suffix
       const baseTrinketId = isRelic 
         ? itemId.replace('_relic', '') 
         : isTalisman 
@@ -1694,32 +1705,27 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       
       const trinket = TRINKETS.find(t => t.id === baseTrinketId);
       if (trinket) {
-        // Yates Totem relic/talisman uses hardcoded overrides instead of generic multipliers
         const useOverride = baseTrinketId === 'yates_totem' && (isRelic || isTalisman);
         const e = useOverride
           ? (isRelic ? YATES_TOTEM_RELIC_EFFECTS : YATES_TOTEM_TALISMAN_EFFECTS)
           : trinket.effects;
         
-        // Get multiplier based on type (skipped for Yates Totem overrides which are already final values)
         let multiplier = 1;
         if (!useOverride) {
-          if (isRelic) {
-            multiplier = RELIC_MULTIPLIERS[trinket.rarity] || 1;
-          } else if (isTalisman) {
-            multiplier = TALISMAN_MULTIPLIERS[trinket.rarity] || 1;
-          }
+          if (isRelic) multiplier = RELIC_MULTIPLIERS[trinket.rarity] || 1;
+          else if (isTalisman) multiplier = TALISMAN_MULTIPLIERS[trinket.rarity] || 1;
         }
-        
-        bonuses.moneyBonus += ((e.moneyBonus || 0) + (e.allBonus || 0) + (e.minerMoneyBonus || 0)) * multiplier;
-        bonuses.rockDamageBonus += ((e.rockDamageBonus || 0) + (e.allBonus || 0)) * multiplier;
-        bonuses.clickSpeedBonus += ((e.clickSpeedBonus || 0) + (e.allBonus || 0)) * multiplier;
-        bonuses.couponBonus += ((e.couponBonus || 0) + (e.couponLuckBonus || 0) + (e.allBonus || 0)) * multiplier;
-        bonuses.minerSpeedBonus += ((e.minerSpeedBonus || 0) + (e.allBonus || 0)) * multiplier;
-        bonuses.minerDamageBonus += ((e.minerDamageBonus || 0) + (e.allBonus || 0)) * multiplier;
+
+        const target = useOverride ? yatesOverride : bonuses;
+        target.moneyBonus += ((e.moneyBonus || 0) + (e.allBonus || 0) + (e.minerMoneyBonus || 0)) * multiplier;
+        target.rockDamageBonus += ((e.rockDamageBonus || 0) + (e.allBonus || 0)) * multiplier;
+        target.clickSpeedBonus += ((e.clickSpeedBonus || 0) + (e.allBonus || 0)) * multiplier;
+        target.couponBonus += ((e.couponBonus || 0) + (e.couponLuckBonus || 0) + (e.allBonus || 0)) * multiplier;
+        target.minerSpeedBonus += ((e.minerSpeedBonus || 0) + (e.allBonus || 0)) * multiplier;
+        target.minerDamageBonus += ((e.minerDamageBonus || 0) + (e.allBonus || 0)) * multiplier;
       }
     }
     
-    // Check for trinket bonus multiplier from prestige upgrades (like Mega Boost)
     let trinketMultiplier = 1.0;
     for (const upgradeId of gameState.ownedPrestigeUpgradeIds) {
       const upgrade = PRESTIGE_UPGRADES.find(u => u.id === upgradeId);
@@ -1728,18 +1734,16 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       }
     }
 
-    // LIGHT PATH BONUS: +50% to all trinket effects
     if (gameState.chosenPath === 'light') {
       trinketMultiplier += 0.50;
     }
     
-    // Apply trinket multiplier to all trinket bonuses
-    bonuses.moneyBonus *= trinketMultiplier;
-    bonuses.rockDamageBonus *= trinketMultiplier;
-    bonuses.clickSpeedBonus *= trinketMultiplier;
-    bonuses.couponBonus *= trinketMultiplier;
-    bonuses.minerSpeedBonus *= trinketMultiplier;
-    bonuses.minerDamageBonus *= trinketMultiplier;
+    bonuses.moneyBonus = bonuses.moneyBonus * trinketMultiplier + yatesOverride.moneyBonus;
+    bonuses.rockDamageBonus = bonuses.rockDamageBonus * trinketMultiplier + yatesOverride.rockDamageBonus;
+    bonuses.clickSpeedBonus = bonuses.clickSpeedBonus * trinketMultiplier + yatesOverride.clickSpeedBonus;
+    bonuses.couponBonus = bonuses.couponBonus * trinketMultiplier + yatesOverride.couponBonus;
+    bonuses.minerSpeedBonus = bonuses.minerSpeedBonus * trinketMultiplier + yatesOverride.minerSpeedBonus;
+    bonuses.minerDamageBonus = bonuses.minerDamageBonus * trinketMultiplier + yatesOverride.minerDamageBonus;
     
     // Add bonuses from prestige upgrades (not multiplied by trinketBonus)
     for (const upgradeId of gameState.ownedPrestigeUpgradeIds) {
@@ -1841,9 +1845,27 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         // Building speed bonus is tracked separately and applied in building calculations
       }
     }
+
+    // SHADY SAM SWAPS (Darkness path only) — debuff one stat, buff another
+    for (const swap of (gameState.shadySamSwaps || [])) {
+      const statMap: Record<ShadySamStat, keyof typeof bonuses> = {
+        couponLuck: 'couponBonus',
+        minerSpeed: 'minerSpeedBonus',
+        clickDamage: 'clickSpeedBonus',
+        pcxDamage: 'rockDamageBonus',
+        moneyMultiplier: 'moneyBonus',
+        minerDamage: 'minerDamageBonus',
+      };
+      const debuffKey = statMap[swap.debuffStat];
+      const buffKey = statMap[swap.buffStat];
+      if (debuffKey && buffKey) {
+        bonuses[debuffKey] -= swap.amount;
+        bonuses[buffKey] += swap.amount;
+      }
+    }
     
     return bonuses;
-  }, [gameState.equippedTrinketIds, gameState.ownedPrestigeUpgradeIds, gameState.equippedTitleIds, gameState.chosenPath, gameState.sacrificeBuff, gameState.buildings.temple.equippedRank, gameState.buildings.wizard_tower.ritualActive, gameState.buildings.wizard_tower.ritualEndTime, gameState.ownedPremiumProductIds]);
+  }, [gameState.equippedTrinketIds, gameState.ownedPrestigeUpgradeIds, gameState.equippedTitleIds, gameState.chosenPath, gameState.sacrificeBuff, gameState.buildings.temple.equippedRank, gameState.buildings.wizard_tower.ritualActive, gameState.buildings.wizard_tower.ritualEndTime, gameState.ownedPremiumProductIds, gameState.shadySamSwaps]);
 
   // Track dirty state for throttled localStorage saves
   const localSaveDirtyRef = useRef(false);
@@ -1968,6 +1990,8 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
           // Stokens & Lottery Tickets
           stokens: gameState.stokens,
           lottery_tickets: gameState.lotteryTickets,
+          // Shady Sam
+          shady_sam_swaps: JSON.stringify(gameState.shadySamSwaps),
         }, gameState.isHardMode);
       }
     } catch (err) {
@@ -2029,6 +2053,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     buildings_data: JSON.stringify(state.buildings),
     stokens: state.stokens,
     lottery_tickets: state.lotteryTickets,
+    shady_sam_swaps: JSON.stringify(state.shadySamSwaps),
   });
 
   const saveNow = useCallback(async (): Promise<boolean> => {
@@ -2191,13 +2216,12 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       const pickaxe = getPickaxeById(prev.currentPickaxeId) || PICKAXES[0];
       const rock = getRockById(prev.currentRockId) || ROCKS[0];
       
-      // Calculate bonuses using full bonus pipeline (mirrors calculateTotalBonuses but with prev state)
       let rockDamageBonus = 0;
       let moneyBonus = 0;
       let couponBonus = 0;
       let clickSpeedBonus = 0;
+      let yOvRock = 0, yOvMoney = 0, yOvCoupon = 0, yOvClick = 0;
       
-      // Trinket bonuses (including relics/talismans)
       for (const itemId of prev.equippedTrinketIds) {
         const isRelic = itemId.endsWith('_relic');
         const isTalisman = itemId.endsWith('_talisman');
@@ -2214,24 +2238,30 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
             else if (isTalisman) multiplier = TALISMAN_MULTIPLIERS[trinket.rarity] || 1;
           }
           
-          rockDamageBonus += ((e.rockDamageBonus || 0) + (e.allBonus || 0)) * multiplier;
-          moneyBonus += ((e.moneyBonus || 0) + (e.allBonus || 0) + (e.minerMoneyBonus || 0)) * multiplier;
-          couponBonus += ((e.couponBonus || 0) + (e.couponLuckBonus || 0) + (e.allBonus || 0)) * multiplier;
-          clickSpeedBonus += ((e.clickSpeedBonus || 0) + (e.allBonus || 0)) * multiplier;
+          if (useOverride) {
+            yOvRock += ((e.rockDamageBonus || 0) + (e.allBonus || 0)) * multiplier;
+            yOvMoney += ((e.moneyBonus || 0) + (e.allBonus || 0) + (e.minerMoneyBonus || 0)) * multiplier;
+            yOvCoupon += ((e.couponBonus || 0) + (e.couponLuckBonus || 0) + (e.allBonus || 0)) * multiplier;
+            yOvClick += ((e.clickSpeedBonus || 0) + (e.allBonus || 0)) * multiplier;
+          } else {
+            rockDamageBonus += ((e.rockDamageBonus || 0) + (e.allBonus || 0)) * multiplier;
+            moneyBonus += ((e.moneyBonus || 0) + (e.allBonus || 0) + (e.minerMoneyBonus || 0)) * multiplier;
+            couponBonus += ((e.couponBonus || 0) + (e.couponLuckBonus || 0) + (e.allBonus || 0)) * multiplier;
+            clickSpeedBonus += ((e.clickSpeedBonus || 0) + (e.allBonus || 0)) * multiplier;
+          }
         }
       }
       
-      // Trinket multiplier from prestige upgrades + light path
       let trinketMultiplier = 1.0;
       for (const upgradeId of prev.ownedPrestigeUpgradeIds) {
         const upgrade = PRESTIGE_UPGRADES.find(u => u.id === upgradeId);
         if (upgrade?.effects.trinketBonus) trinketMultiplier += upgrade.effects.trinketBonus;
       }
       if (prev.chosenPath === 'light') trinketMultiplier += 0.50;
-      rockDamageBonus *= trinketMultiplier;
-      moneyBonus *= trinketMultiplier;
-      couponBonus *= trinketMultiplier;
-      clickSpeedBonus *= trinketMultiplier;
+      rockDamageBonus = rockDamageBonus * trinketMultiplier + yOvRock;
+      moneyBonus = moneyBonus * trinketMultiplier + yOvMoney;
+      couponBonus = couponBonus * trinketMultiplier + yOvCoupon;
+      clickSpeedBonus = clickSpeedBonus * trinketMultiplier + yOvClick;
       
       // Prestige upgrade bonuses (not multiplied by trinketBonus)
       for (const upgradeId of prev.ownedPrestigeUpgradeIds) {
@@ -3632,6 +3662,36 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     
     return true;
   }, [gameState.chosenPath, gameState.minerCount, getSacrificeBuffForCount]);
+
+  // Shady Sam — add a stat swap (Darkness path only)
+  const addShadySamSwap = useCallback((debuffStat: ShadySamStat, buffStat: ShadySamStat, amount: number): boolean => {
+    if (gameState.chosenPath !== 'darkness') return false;
+    if (debuffStat === buffStat) return false;
+    if (amount <= 0) return false;
+    if (gameState.yatesDollars < SHADY_SAM_SWAP_COST) return false;
+
+    const swap: ShadySamSwap = {
+      id: `sam_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      debuffStat,
+      buffStat,
+      amount: amount / 100, // convert percentage to decimal (e.g. 50 -> 0.5)
+    };
+
+    setGameState(prev => ({
+      ...prev,
+      yatesDollars: prev.yatesDollars - SHADY_SAM_SWAP_COST,
+      shadySamSwaps: [...prev.shadySamSwaps, swap],
+    }));
+
+    return true;
+  }, [gameState.chosenPath, gameState.yatesDollars]);
+
+  const removeShadySamSwap = useCallback((swapId: string): void => {
+    setGameState(prev => ({
+      ...prev,
+      shadySamSwaps: prev.shadySamSwaps.filter(s => s.id !== swapId),
+    }));
+  }, []);
 
   // Check if player can activate the Golden Cookie ritual
   const canActivateRitual = useCallback((): boolean => {
@@ -5106,6 +5166,8 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         canMineRockForPath,
         sacrificeMiners,
         getSacrificeBuffForCount,
+        addShadySamSwap,
+        removeShadySamSwap,
         activateGoldenCookieRitual,
         canActivateRitual,
         claimGoldenCookieReward,

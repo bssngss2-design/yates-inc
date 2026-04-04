@@ -69,6 +69,8 @@ export interface UserGameData {
   // Stokens & Lottery Tickets
   stokens?: number;
   lottery_tickets?: number;
+  // Shady Sam
+  shady_sam_swaps?: string;
   // Timestamp (set by Supabase)
   updated_at?: string;
 }

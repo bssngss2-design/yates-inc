@@ -58,6 +58,10 @@ export interface UserGameData {
   chosen_path?: string | null;
   // Tax system (1QI+ wealth tax)
   last_tax_time?: number | null;
+  // Loans
+  loan_amount?: number;
+  loan_taken_at?: number | null;
+  loan_last_accrual_at?: number | null;
   // Playtime tracking
   total_playtime_seconds?: number;
   // Premium products (game buffs)

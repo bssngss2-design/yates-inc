@@ -26,6 +26,7 @@ import {
   FACTORY_BONUS_MINERS, generateFactoryBuff, getNextFactoryBuffTime,
   FACTORY_BUFF_MIN_INTERVAL, FACTORY_BUFF_MAX_INTERVAL, FACTORY_BUFF_REDUCTION_PER_FACTORY,
   BANK_BASE_INTEREST_RATE, BANK_TIME_MULTIPLIER, calculateBankInterest,
+  LOAN_MAX_AMOUNT, LOAN_DAILY_INTEREST_RATE, LOAN_OPEN_TAB_BONUS_RATE, LOAN_AUTO_REPAY_THRESHOLD,
   BANK_TIERS, BANK_MAX_TIER, getBankDepositCap, getBankTierForAmount,
   TEMPLE_MINER_MONEY_MULTIPLIER, TEMPLE_BUFF_INTERVAL_MIN, TEMPLE_BUFF_INTERVAL_MAX,
   getProgressiveUpgradeCost, getProgressiveUpgradeBonus,
@@ -203,6 +204,10 @@ interface GameContextType {
   withdrawFromBank: () => { principal: number; interest: number; capped: boolean } | null;
   getBankBalance: () => { principal: number; interest: number; totalTime: number };
   unlockBankTier: () => boolean;
+  // Loan functions
+  takeLoan: (amount: number) => boolean;
+  repayLoan: (amount: number) => boolean;
+  getLoanStatus: () => { debt: number; dailyInterest: number; isAutoRepaying: boolean };
   // Factory functions
   getFactoryBonusMiners: () => number;
   // Temple functions (Light path)
@@ -321,6 +326,10 @@ const defaultGameState: GameState = {
   sacrificeBuff: null,
   adminCommandsUntil: null,
   lastTaxTime: null,
+  // Loans
+  loanAmount: 0,
+  loanTakenAt: null,
+  loanLastAccrualAt: null,
   // Timestamp for sync conflict resolution
   // IMPORTANT: Must be 0 (not Date.now()) so Supabase data is preferred on new devices
   localUpdatedAt: 0,
@@ -809,6 +818,10 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
                 chosenPath: (supabaseData.chosen_path as GamePath) ?? prev.chosenPath,
                 // Tax system (sync from Supabase)
                 lastTaxTime: (supabaseData as unknown as { last_tax_time?: number | null }).last_tax_time ?? prev.lastTaxTime,
+                // Loans
+                loanAmount: (supabaseData as unknown as { loan_amount?: number }).loan_amount ?? prev.loanAmount,
+                loanTakenAt: (supabaseData as unknown as { loan_taken_at?: number | null }).loan_taken_at ?? prev.loanTakenAt,
+                loanLastAccrualAt: (supabaseData as unknown as { loan_last_accrual_at?: number | null }).loan_last_accrual_at ?? prev.loanLastAccrualAt,
                 // Playtime tracking (use max to never lose playtime)
                 totalPlaytimeSeconds: Math.max(
                   prev.totalPlaytimeSeconds || 0,
@@ -1000,6 +1013,60 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     
     return () => clearInterval(playtimeInterval);
   }, []);
+
+  // Loan interest accrual tick — runs every 10 seconds
+  useEffect(() => {
+    if (gameState.loanAmount <= 0) return;
+
+    const loanInterval = setInterval(() => {
+      setGameState(prev => {
+        if (prev.loanAmount <= 0 || !prev.loanTakenAt) return prev;
+
+        const now = Date.now();
+        const lastAccrual = prev.loanLastAccrualAt || prev.loanTakenAt;
+        const elapsedMs = now - lastAccrual;
+        if (elapsedMs < 5000) return prev; // Skip if less than 5s since last accrual
+
+        // 25% per IRL day, but reduced by 12% per hour the tab is open
+        const elapsedDays = elapsedMs / (1000 * 60 * 60 * 24);
+        const elapsedHours = elapsedMs / (1000 * 60 * 60);
+
+        // Reduce the effective daily rate while playing (12% reduction per hour, floor at 0)
+        const reduction = Math.min(LOAN_OPEN_TAB_BONUS_RATE * elapsedHours, LOAN_DAILY_INTEREST_RATE);
+        const effectiveRate = LOAN_DAILY_INTEREST_RATE - reduction;
+        const totalInterest = prev.loanAmount * Math.max(0, effectiveRate) * elapsedDays;
+        let newDebt = prev.loanAmount + totalInterest;
+        let newMoney = prev.yatesDollars;
+
+        // Auto-repay: if debt >= 2x current money, route earnings to debt
+        if (newDebt >= newMoney * LOAN_AUTO_REPAY_THRESHOLD && newMoney > 0) {
+          const autoPayment = Math.min(newMoney * 0.1, newDebt); // 10% of money per tick
+          newDebt -= autoPayment;
+          newMoney -= autoPayment;
+        }
+
+        // If fully repaid via auto-repay
+        if (newDebt <= 0) {
+          return {
+            ...prev,
+            loanAmount: 0,
+            loanTakenAt: null,
+            loanLastAccrualAt: null,
+            yatesDollars: newMoney,
+          };
+        }
+
+        return {
+          ...prev,
+          loanAmount: newDebt,
+          loanLastAccrualAt: now,
+          yatesDollars: newMoney,
+        };
+      });
+    }, 10000);
+
+    return () => clearInterval(loanInterval);
+  }, [gameState.loanAmount > 0]);
 
   // Check for "Blessed by the Heavens" title unlock
   useEffect(() => {
@@ -1888,6 +1955,10 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
           chosen_path: gameState.chosenPath,
           // Tax system
           last_tax_time: gameState.lastTaxTime,
+          // Loans
+          loan_amount: gameState.loanAmount,
+          loan_taken_at: gameState.loanTakenAt,
+          loan_last_accrual_at: gameState.loanLastAccrualAt,
           // Playtime tracking
           total_playtime_seconds: gameState.totalPlaytimeSeconds,
           // Premium products - only if has items
@@ -1950,6 +2021,9 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     title_win_counts: state.titleWinCounts,
     chosen_path: state.chosenPath,
     last_tax_time: state.lastTaxTime,
+    loan_amount: state.loanAmount,
+    loan_taken_at: state.loanTakenAt,
+    loan_last_accrual_at: state.loanLastAccrualAt,
     total_playtime_seconds: state.totalPlaytimeSeconds,
     ...(state.ownedPremiumProductIds?.length ? { owned_premium_product_ids: state.ownedPremiumProductIds } : {}),
     buildings_data: JSON.stringify(state.buildings),
@@ -3860,6 +3934,57 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     return { principal, interest, totalTime };
   }, [gameState.buildings.bank, getBankInterestMultiplier]);
 
+  // =====================
+  // LOAN FUNCTIONS
+  // =====================
+
+  const takeLoan = useCallback((amount: number): boolean => {
+    if (amount <= 0 || amount > LOAN_MAX_AMOUNT) return false;
+    if (gameState.loanAmount > 0) return false; // One loan at a time
+    if (!gameState.buildings.bank.owned) return false;
+
+    const now = Date.now();
+    setGameState(prev => ({
+      ...prev,
+      yatesDollars: safeAdd(prev.yatesDollars, safeMoney(amount)),
+      loanAmount: amount,
+      loanTakenAt: now,
+      loanLastAccrualAt: now,
+    }));
+
+    return true;
+  }, [gameState.loanAmount, gameState.buildings.bank.owned]);
+
+  const repayLoan = useCallback((amount: number): boolean => {
+    if (amount <= 0) return false;
+
+    let didRepay = false;
+    setGameState(prev => {
+      if (prev.loanAmount <= 0) return prev;
+      const repayAmount = Math.min(amount, prev.loanAmount, prev.yatesDollars);
+      if (repayAmount <= 0) return prev;
+
+      didRepay = true;
+      const newDebt = Math.max(0, prev.loanAmount - repayAmount);
+      return {
+        ...prev,
+        yatesDollars: prev.yatesDollars - repayAmount,
+        loanAmount: newDebt,
+        loanTakenAt: newDebt <= 0 ? null : prev.loanTakenAt,
+        loanLastAccrualAt: newDebt <= 0 ? null : prev.loanLastAccrualAt,
+      };
+    });
+
+    return didRepay;
+  }, []);
+
+  const getLoanStatus = useCallback((): { debt: number; dailyInterest: number; isAutoRepaying: boolean } => {
+    const debt = gameState.loanAmount;
+    const dailyInterest = debt * LOAN_DAILY_INTEREST_RATE;
+    const isAutoRepaying = debt >= gameState.yatesDollars * LOAN_AUTO_REPAY_THRESHOLD;
+    return { debt, dailyInterest, isAutoRepaying };
+  }, [gameState.loanAmount, gameState.yatesDollars]);
+
   // Factory functions
   const getFactoryBonusMiners = useCallback((): number => {
     return gameState.buildings.factory.bonusMiners;
@@ -4994,6 +5119,9 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         withdrawFromBank,
         getBankBalance,
         unlockBankTier,
+        takeLoan,
+        repayLoan,
+        getLoanStatus,
         getFactoryBonusMiners,
         buyTempleUpgrade,
         equipTempleRank,

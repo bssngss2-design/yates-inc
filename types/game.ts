@@ -171,6 +171,12 @@ export interface GameState {
   sacrificeBuff: SacrificeBuff | null; // Current active sacrifice buff
   adminCommandsUntil: number | null; // Timestamp when admin commands expire (from golden cookie)
   lastTaxTime: number | null;        // Timestamp of last wealth tax (1QI+ = 10-30% daily)
+  // =====================
+  // BANK LOAN SYSTEM
+  // =====================
+  loanAmount: number;                // Current outstanding loan principal + accrued interest
+  loanTakenAt: number | null;        // Timestamp when loan was taken
+  loanLastAccrualAt: number | null;  // Timestamp of last interest accrual (for open-tab bonus)
   // Timestamp for sync conflict resolution
   localUpdatedAt: number;
   // Playtime tracking for "Blessed by the Heavens" title
@@ -1754,6 +1760,12 @@ export const BANK_COST_PERCENTAGE_MIN = 0.60; // 60% of current money
 export const BANK_COST_PERCENTAGE_MAX = 0.70; // 70% of current money
 export const BANK_BASE_INTEREST_RATE = 0.001; // 0.1% per minute base
 export const BANK_TIME_MULTIPLIER = 0.0001; // Interest increases with time
+
+// Bank Loan constants
+export const LOAN_MAX_AMOUNT = 1e21; // Max loan: 1 Sextillion
+export const LOAN_DAILY_INTEREST_RATE = 0.25; // 25% compound interest per IRL day
+export const LOAN_OPEN_TAB_BONUS_RATE = 0.05; // 5% interest reduction per hour while game tab open
+export const LOAN_AUTO_REPAY_THRESHOLD = 2; // If debt >= 2x current money, auto-route earnings to debt
 
 export interface BankTierDef {
   label: string;

@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import Image from 'next/image';
 import { useGame } from '@/contexts/GameContext';
-import { BANK_BASE_INTEREST_RATE, BANK_TIERS, BANK_MAX_TIER, getBankDepositCap, TRINKETS, YATES_TOTEM_RELIC_EFFECTS, YATES_TOTEM_TALISMAN_EFFECTS } from '@/types/game';
+import { useBudget } from '@/contexts/BudgetContext';
+import { BANK_BASE_INTEREST_RATE, BANK_TIERS, BANK_MAX_TIER, getBankDepositCap, TRINKETS, YATES_TOTEM_RELIC_EFFECTS, YATES_TOTEM_TALISMAN_EFFECTS, LOAN_MAX_AMOUNT, LOAN_DAILY_INTEREST_RATE, LOAN_OPEN_TAB_BONUS_RATE } from '@/types/game';
 
 interface BankModalProps {
   onClose: () => void;
@@ -16,9 +17,31 @@ export default function BankModal({ onClose }: BankModalProps) {
     withdrawFromBank, 
     getBankBalance,
     unlockBankTier,
+    takeLoan,
+    repayLoan,
+    getLoanStatus,
   } = useGame();
   
+  const { subtractFromActiveBudget, addToActiveBudget } = useBudget();
+
   const [depositPercent, setDepositPercent] = useState(50);
+  const [activeTab, setActiveTab] = useState<'bank' | 'loans'>('bank');
+  const [loanPercent, setLoanPercent] = useState(50);
+  const [repayPercent, setRepayPercent] = useState(100);
+
+  const handleTakeLoan = async (amount: number) => {
+    const success = takeLoan(amount);
+    if (success) {
+      await subtractFromActiveBudget(amount, `Game loan: $${amount.toExponential(2)} borrowed`, 'manual_subtract');
+    }
+  };
+
+  const handleRepayLoan = async (amount: number) => {
+    const success = repayLoan(amount);
+    if (success) {
+      await addToActiveBudget(amount, `Game loan repayment: $${amount.toExponential(2)}`, 'manual_add');
+    }
+  };
 
   const getBankInterestMultiplier = (): number => {
     let multiplier = 1;
@@ -124,6 +147,31 @@ export default function BankModal({ onClose }: BankModalProps) {
           </button>
         </div>
 
+        {/* Tab Selector */}
+        <div className="flex border-b border-emerald-700/50">
+          <button
+            onClick={() => setActiveTab('bank')}
+            className={`flex-1 py-2.5 text-sm font-bold transition-colors ${
+              activeTab === 'bank'
+                ? 'text-emerald-300 border-b-2 border-emerald-400'
+                : 'text-gray-400 hover:text-gray-300'
+            }`}
+          >
+            💰 Deposits
+          </button>
+          <button
+            onClick={() => setActiveTab('loans')}
+            className={`flex-1 py-2.5 text-sm font-bold transition-colors ${
+              activeTab === 'loans'
+                ? 'text-red-300 border-b-2 border-red-400'
+                : 'text-gray-400 hover:text-gray-300'
+            }`}
+          >
+            🏷️ Loans {gameState.loanAmount > 0 && <span className="text-red-400 ml-1">(${formatNumber(gameState.loanAmount)})</span>}
+          </button>
+        </div>
+
+        {activeTab === 'bank' ? (
         <div className="p-6 space-y-5">
           {/* Deposit Cap / Tier Status */}
           <div className="bg-black/30 rounded-xl p-4 border border-cyan-600/30">
@@ -257,6 +305,145 @@ export default function BankModal({ onClose }: BankModalProps) {
             <p>💡 The bank earns {(effectiveInterestRate * 100).toFixed(1)}% interest per minute (compounds over time). You can only have one deposit at a time.</p>
           </div>
         </div>
+        ) : (
+        <div className="p-6 space-y-5">
+          {/* Loan Overview */}
+          {(() => {
+            const loanStatus = getLoanStatus();
+            const hasLoan = loanStatus.debt > 0;
+            const loanSliderValue = Math.floor(LOAN_MAX_AMOUNT * (loanPercent / 100));
+            const repayMax = Math.min(gameState.yatesDollars, loanStatus.debt);
+            const repayValue = hasLoan ? Math.floor(repayMax * (repayPercent / 100)) : 0;
+            const timeSinceLoan = gameState.loanTakenAt ? Date.now() - gameState.loanTakenAt : 0;
+            const loanHours = Math.floor(timeSinceLoan / (1000 * 60 * 60));
+            const loanMinutes = Math.floor((timeSinceLoan % (1000 * 60 * 60)) / (1000 * 60));
+            const loanTimeStr = loanHours > 0 ? `${loanHours}h ${loanMinutes}m` : `${loanMinutes}m`;
+
+            return (
+              <>
+                {/* Your Cash */}
+                <div className="bg-black/30 rounded-xl p-4 border border-yellow-600/30">
+                  <div className="flex justify-between items-center">
+                    <span className="text-yellow-400 font-bold">💵 Your Cash</span>
+                    <span className="text-white font-bold text-xl">${formatNumber(gameState.yatesDollars)}</span>
+                  </div>
+                </div>
+
+                {hasLoan ? (
+                  <>
+                    {/* Current Debt */}
+                    <div className="bg-black/30 rounded-xl p-4 border border-red-600/30">
+                      <h3 className="text-red-400 font-bold mb-3">💀 Outstanding Debt</h3>
+                      <div className="text-3xl font-bold text-red-300 mb-2">${formatNumber(loanStatus.debt)}</div>
+                      <div className="space-y-1 text-sm">
+                        <div className="flex justify-between text-gray-400">
+                          <span>Base rate (25%/day):</span>
+                          <span className="text-red-400">+${formatNumber(loanStatus.dailyInterest)}/day</span>
+                        </div>
+                        <div className="flex justify-between text-gray-400">
+                          <span>Playing bonus:</span>
+                          <span className="text-green-400">-12%/hr while tab is open</span>
+                        </div>
+                        <div className="flex justify-between text-gray-500">
+                          <span>Loan taken:</span>
+                          <span>{loanTimeStr} ago</span>
+                        </div>
+                      </div>
+                      {loanStatus.isAutoRepaying && (
+                        <div className="mt-3 bg-red-900/30 rounded-lg p-2 border border-red-600/40">
+                          <p className="text-red-300 text-xs font-bold">⚠️ AUTO-REPAY ACTIVE</p>
+                          <p className="text-red-400/80 text-xs">Debt exceeds 2× your cash — 10% of money is auto-routed to repayment each tick.</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Repay Loan */}
+                    <div className="space-y-3">
+                      <h3 className="text-white font-bold">Repay Loan</h3>
+                      <div className="space-y-2">
+                        <input
+                          type="range"
+                          min="1"
+                          max="100"
+                          value={repayPercent}
+                          onChange={(e) => setRepayPercent(Number(e.target.value))}
+                          className="w-full accent-red-500"
+                        />
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-400">{repayPercent}% — ${formatNumber(repayValue)}</span>
+                          <span className="text-gray-500 text-xs">max ${formatNumber(repayMax)}</span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleRepayLoan(repayValue)}
+                        disabled={repayValue <= 0}
+                        className="w-full py-3 rounded-lg font-bold bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white transition-all disabled:opacity-50"
+                      >
+                        Repay ${formatNumber(repayValue)}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* Take a Loan */}
+                    <div className="bg-black/30 rounded-xl p-4 border border-amber-600/30">
+                      <h3 className="text-amber-400 font-bold mb-2">📋 Loan Terms</h3>
+                      <div className="space-y-1 text-sm text-gray-400">
+                        <div className="flex justify-between">
+                          <span>Max loan:</span>
+                          <span className="text-white">${formatNumber(LOAN_MAX_AMOUNT)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Base interest:</span>
+                          <span className="text-red-400">{(LOAN_DAILY_INTEREST_RATE * 100).toFixed(0)}% of debt per day</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Playing bonus:</span>
+                          <span className="text-green-400">-{(LOAN_OPEN_TAB_BONUS_RATE * 100).toFixed(0)}%/hr while tab open</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>One loan at a time</span>
+                          <span className="text-gray-500">✓</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <h3 className="text-white font-bold">Take a Loan</h3>
+                      <div className="space-y-2">
+                        <input
+                          type="range"
+                          min="1"
+                          max="100"
+                          value={loanPercent}
+                          onChange={(e) => setLoanPercent(Number(e.target.value))}
+                          className="w-full accent-amber-500"
+                        />
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-400">{loanPercent}%</span>
+                          <span className="text-amber-400">${formatNumber(loanSliderValue)}</span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleTakeLoan(loanSliderValue)}
+                        disabled={loanSliderValue <= 0 || !gameState.buildings.bank.owned}
+                        className="w-full py-3 rounded-lg font-bold bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-white transition-all disabled:opacity-50"
+                      >
+                        {gameState.buildings.bank.owned ? `Borrow $${formatNumber(loanSliderValue)}` : 'Need Bank building'}
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {/* Loan Info */}
+                <div className="bg-black/20 rounded-lg p-3 text-gray-400 text-xs">
+                  <p>⚠️ Your debt grows 25% per real day. Keeping the game tab open reduces interest by 5% per hour (so after 5 hours playing, interest drops to 0%). If debt hits 2× your cash, earnings auto-route to repayment.</p>
+                </div>
+              </>
+            );
+          })()}
+        </div>
+        )}
       </div>
     </div>
   );

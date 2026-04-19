@@ -15,6 +15,8 @@ import PaycheckSidebar from './PaycheckSidebar';
 import BudgetSidebar from './BudgetSidebar';
 import GitCommitsModal from './GitCommitsModal';
 import VoteForChangeModal from './VoteForChangeModal';
+import EmployeeShopModal from './EmployeeShopModal';
+import EmployeeName from './EmployeeName';
 
 // Format money with K, M, B, T, Q suffixes
 function formatMoney(amount: number): string {
@@ -50,6 +52,7 @@ export default function Navbar() {
   const [showBudget, setShowBudget] = useState(false);
   const [showGitCommits, setShowGitCommits] = useState(false);
   const [showVoteModal, setShowVoteModal] = useState(false);
+  const [showShopModal, setShowShopModal] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Check if current user is Logan (CEO)
@@ -139,6 +142,17 @@ export default function Navbar() {
                 </button>
               )}
 
+              {/* Employee Shop button - employees only */}
+              {isLoggedIn && (
+                <button
+                  onClick={() => setShowShopModal(true)}
+                  className="font-bold text-xs px-2.5 py-1.5 rounded-lg border-2 border-black bg-gradient-to-br from-orange-400 via-pink-500 to-orange-500 text-white hover:from-orange-500 hover:to-pink-600 transition-all shadow-sm hover:shadow-md"
+                  title="Shop w ur money"
+                >
+                  🛍️
+                </button>
+              )}
+
               {/* Paychecks button - CEO only */}
               {isCEO && (
                 <button
@@ -194,9 +208,14 @@ export default function Navbar() {
                 <div className="flex items-center gap-2 ml-2 pl-2 border-l border-gray-300 dark:border-gray-700">
                   <div className="flex flex-col items-end">
                     <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      {isLoggedIn && employee 
-                        ? employee.name.split(' ')[0] 
-                        : client?.username}
+                      {isLoggedIn && employee ? (
+                        <EmployeeName
+                          employeeId={employee.id}
+                          name={employee.name.split(' ')[0]}
+                        />
+                      ) : (
+                        client?.username
+                      )}
                     </span>
                     {isLoggedIn && employee && (
                       <span className="text-xs text-blue-600 dark:text-blue-400">
@@ -410,6 +429,18 @@ export default function Navbar() {
                         🏦 Company Budget
                       </button>
                     )}
+                    {/* Employee Shop button - mobile */}
+                    {isLoggedIn && (
+                      <button
+                        onClick={() => {
+                          setShowShopModal(true);
+                          setMobileMenuOpen(false);
+                        }}
+                        className="w-full text-left font-bold text-orange-600 dark:text-orange-400 mb-3"
+                      >
+                        🛍️ Shop w ur money
+                      </button>
+                    )}
                     {/* CEO Paychecks button - mobile */}
                     {isCEO && (
                       <button
@@ -445,6 +476,7 @@ export default function Navbar() {
       {isLoggedIn && <BudgetSidebar isOpen={showBudget} onClose={() => setShowBudget(false)} />}
       <GitCommitsModal isOpen={showGitCommits} onClose={() => setShowGitCommits(false)} />
       <VoteForChangeModal isOpen={showVoteModal} onClose={() => setShowVoteModal(false)} />
+      <EmployeeShopModal isOpen={showShopModal} onClose={() => setShowShopModal(false)} />
     </>
   );
 }

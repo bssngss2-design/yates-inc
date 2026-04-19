@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { usePaycheck } from '@/contexts/PaycheckContext';
 import { employees } from '@/utils/products';
+import EmployeeName from './EmployeeName';
 
 interface PaycheckSidebarProps {
   isOpen: boolean;
@@ -142,7 +143,10 @@ export default function PaycheckSidebar({ isOpen, onClose }: PaycheckSidebarProp
                 <div className="flex justify-between items-start mb-3">
                   <div>
                     <h3 className="font-bold text-gray-900 dark:text-white">
-                      {getEmployeeName(paycheck.employee_id)}
+                      <EmployeeName
+                        employeeId={paycheck.employee_id}
+                        name={getEmployeeName(paycheck.employee_id)}
+                      />
                     </h3>
                     <p className="text-sm text-blue-600 dark:text-blue-400">
                       {getEmployeeRole(paycheck.employee_id)}

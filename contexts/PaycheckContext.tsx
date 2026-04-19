@@ -9,6 +9,23 @@ import { calculateFinalAmount, getTaxBreakdown, calculateTax } from '@/utils/tax
 // Small portion of collected paycheck tax that feeds the Tax Pool (Vote for Change)
 const PAYCHECK_TAX_TO_POOL_PCT = 0.25;
 
+// Super Good Chair: 20% shorter pay interval (min 1 day).
+async function getAdjustedPayInterval(baseInterval: number, employeeId: string): Promise<number> {
+  try {
+    const { data } = await supabase
+      .from('employee_shop_effects')
+      .select('effect_type,expires_at,uses_remaining')
+      .eq('employee_id', employeeId)
+      .eq('effect_type', 'chair_paycheck_boost')
+      .maybeSingle();
+    if (!data) return baseInterval;
+    if (data.expires_at && new Date(data.expires_at).getTime() < Date.now()) return baseInterval;
+    return Math.max(1, Math.ceil(baseInterval * 0.8));
+  } catch {
+    return baseInterval;
+  }
+}
+
 async function fundTaxPoolFromPaycheckTax(salaryAmount: number, employeeId: string): Promise<void> {
   try {
     const taxTotal = calculateTax(salaryAmount, 'paycheck');
@@ -173,12 +190,14 @@ export function PaycheckProvider({ children }: { children: React.ReactNode }) {
         ? { yates_balance: paycheck.yates_balance + netSalary }
         : { walters_balance: paycheck.walters_balance + netSalary };
 
+    const adjInterval = await getAdjustedPayInterval(paycheck.pay_interval, employeeId);
+
     try {
       const { error } = await supabase
         .from('employee_paychecks')
         .update({
           ...newBalance,
-          days_until_paycheck: paycheck.pay_interval,
+          days_until_paycheck: adjInterval,
           last_paycheck_date: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
@@ -216,11 +235,12 @@ export function PaycheckProvider({ children }: { children: React.ReactNode }) {
             : { walters_balance: paycheck.walters_balance + netSalary };
 
         try {
+          const adjInterval = await getAdjustedPayInterval(paycheck.pay_interval, paycheck.employee_id);
           await supabase
             .from('employee_paychecks')
             .update({
               ...newBalance,
-              days_until_paycheck: paycheck.pay_interval,
+              days_until_paycheck: adjInterval,
               last_paycheck_date: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             })

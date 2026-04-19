@@ -2215,6 +2215,28 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
   const gameStateRef = useRef(gameState);
   gameStateRef.current = gameState;
 
+  // Motivation Pack boost (from Employee Shop). When active, multiplies click damage
+  // and earned money by 2x for 1 minute. Ref-based so mineRock always sees latest.
+  const motivationBoostUntilRef = useRef<number>(0);
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('yates-motivation-boost-until');
+      if (stored) {
+        const n = parseInt(stored, 10);
+        if (!isNaN(n)) motivationBoostUntilRef.current = n;
+      }
+    } catch {}
+    const onBoost = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.until) motivationBoostUntilRef.current = detail.until;
+    };
+    window.addEventListener('yates-motivation-boost', onBoost);
+    return () => window.removeEventListener('yates-motivation-boost', onBoost);
+  }, []);
+  const getMotivationMultiplier = useCallback(() => {
+    return Date.now() < motivationBoostUntilRef.current ? 2 : 1;
+  }, []);
+
   const mineRock = useCallback(() => {
     const state = gameStateRef.current;
     
@@ -2417,12 +2439,18 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       // Calculate click power (clickSpeedBonus multiplies damage: 50% = 1.5x, 100% = 2x)
       let clickPower = pickaxe.clickPower;
       clickPower = Math.ceil(clickPower * (1 + rockDamageBonus + allBonus) * damageMultiplier * (1 + clickSpeedBonus) * wizardRitualMultiplier * factoryDamageMultiplier * factorySpeedMultiplier);
-      
+
       // Hard Mode: 15% less pickaxe damage
       if (prev.isHardMode) {
         clickPower = Math.ceil(clickPower * HARD_MODE_MODIFIERS.pickaxeDamageMultiplier);
       }
-      
+
+      // Motivation Pack boost (+100% to everything for 1 minute)
+      const motivationMult = getMotivationMultiplier();
+      if (motivationMult > 1) {
+        clickPower = Math.ceil(clickPower * motivationMult);
+      }
+
       clickPower = Math.max(1, clickPower); // Ensure at least 1 damage
       
       const newHP = Math.max(0, prev.currentRockHP - clickPower);
@@ -2443,6 +2471,9 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       earnedMoney *= (wizardRitualMultiplier || 1); // Wizard ritual 3x
       earnedMoney *= (factoryMoneyMultiplier || 1); // Factory money buff
       earnedMoney *= (templeCurseMoneyPenalty || 1); // Temple curse penalties
+      if (motivationMult > 1) {
+        earnedMoney *= motivationMult; // Motivation Pack boost
+      }
       earnedMoney = safeMoney(earnedMoney);
       
       // Wandering Trader money tax (if deal is active)
@@ -5165,8 +5196,9 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         if (!currentRock) return prev;
 
         // 20% of click money per mine, every 0.5s
+        const motivationMult = getMotivationMultiplier();
         const clickMoney = safeMoney(currentRock.moneyPerBreak * prev.prestigeMultiplier);
-        const passiveIncome = safeMoney(clickMoney * 0.20 * mineCount);
+        const passiveIncome = safeMoney(clickMoney * 0.20 * mineCount * motivationMult);
 
         return {
           ...prev,

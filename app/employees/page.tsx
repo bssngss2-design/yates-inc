@@ -1,5 +1,6 @@
 import { employees, firedEmployees } from '@/utils/products';
 import Image from 'next/image';
+import EmployeeName from '@/components/EmployeeName';
 
 export default function EmployeesPage() {
   return (
@@ -31,7 +32,7 @@ export default function EmployeesPage() {
               )}
               <div className="mb-3 sm:mb-4">
                 <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white mb-1">
-                  {employee.name}
+                  <EmployeeName employeeId={employee.id} name={employee.name} />
                 </h2>
                 <p className="text-blue-600 dark:text-blue-400 font-semibold text-base sm:text-lg">{employee.role}</p>
               </div>
@@ -52,7 +53,7 @@ export default function EmployeesPage() {
                 >
                   <div className="mb-3 sm:mb-4">
                     <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white mb-1">
-                      {employee.name}
+                      <EmployeeName employeeId={employee.id} name={employee.name} />
                     </h2>
                     <p className="text-red-600 dark:text-red-400 font-semibold text-base sm:text-lg">{employee.role}</p>
                   </div>

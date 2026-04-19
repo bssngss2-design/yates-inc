@@ -954,9 +954,9 @@ export function getPrestigePriceMultiplier(prestigeCount: number, isHardMode: bo
 }
 
 // Get miner cost with prestige scaling (10% increase every 5 prestiges)
-export function getMinerCost(currentMinerCount: number, prestigeCount: number = 0, isHardMode: boolean = false): number {
+export function getMinerCost(currentMinerCount: number, prestigeCount: number = 0, isHardMode: boolean = false, sideLevel: number = 0): number {
   const baseCost = Math.floor(MINER_BASE_COST * Math.pow(MINER_COST_MULTIPLIER, currentMinerCount));
-  return Math.floor(baseCost * getPrestigePriceMultiplier(prestigeCount, isHardMode));
+  return Math.floor(baseCost * getPrestigePriceMultiplier(prestigeCount, isHardMode, sideLevel));
 }
 
 // =====================

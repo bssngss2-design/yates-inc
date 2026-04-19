@@ -6,6 +6,7 @@ import { useMail } from '@/contexts/MailContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useClient } from '@/contexts/ClientContext';
 import { usePaycheck } from '@/contexts/PaycheckContext';
+import { useTaxVote } from '@/contexts/TaxVoteContext';
 import { useState } from 'react';
 import CartSidebar from './CartSidebar';
 import InboxSidebar from './InboxSidebar';
@@ -13,6 +14,7 @@ import PaycheckSidebar from './PaycheckSidebar';
 // Stock Market removed - feature deprecated
 import BudgetSidebar from './BudgetSidebar';
 import GitCommitsModal from './GitCommitsModal';
+import VoteForChangeModal from './VoteForChangeModal';
 
 // Format money with K, M, B, T, Q suffixes
 function formatMoney(amount: number): string {
@@ -40,12 +42,14 @@ export default function Navbar() {
   const { isLoggedIn, logout, employee } = useAuth();
   const { isClient, client, setClient } = useClient();
   const { currentUserPaycheck } = usePaycheck();
+  const { pool, activeProposal } = useTaxVote();
   const [showCart, setShowCart] = useState(false);
   const [showInbox, setShowInbox] = useState(false);
   const [showPaychecks, setShowPaychecks] = useState(false);
   // Stock market removed
   const [showBudget, setShowBudget] = useState(false);
   const [showGitCommits, setShowGitCommits] = useState(false);
+  const [showVoteModal, setShowVoteModal] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Check if current user is Logan (CEO)
@@ -106,6 +110,23 @@ export default function Navbar() {
                 EL
               </Link>
 
+
+              {/* Vote for Change button - everyone */}
+              <button
+                onClick={() => setShowVoteModal(true)}
+                className={`relative flex items-center gap-1.5 font-bold text-xs px-3 py-1.5 rounded-lg border-2 border-black bg-gradient-to-br from-yellow-300 via-yellow-400 to-yellow-500 text-black hover:from-yellow-400 hover:to-yellow-500 transition-all shadow-sm hover:shadow-md ${
+                  activeProposal ? 'animate-pulse' : ''
+                }`}
+                title={activeProposal ? `Active: ${activeProposal.title}` : 'Vote for Change'}
+              >
+                <span>🗳️</span>
+                <span className="font-black tabular-nums">
+                  ${formatMoney(pool?.balance ?? 0)}
+                </span>
+                {activeProposal && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 rounded-full w-2.5 h-2.5 border border-white" />
+                )}
+              </button>
 
               {/* Company Budget button - all employees */}
               {isLoggedIn && (
@@ -229,7 +250,21 @@ export default function Navbar() {
             </div>
 
             {/* Mobile menu button + quick actions */}
-            <div className="flex md:hidden items-center gap-3">
+            <div className="flex md:hidden items-center gap-2">
+              {/* Mobile Vote for Change */}
+              <button
+                onClick={() => setShowVoteModal(true)}
+                className={`flex items-center gap-1 font-bold text-[11px] px-2 py-1 rounded-md border-2 border-black bg-gradient-to-br from-yellow-300 to-yellow-500 text-black ${
+                  activeProposal ? 'animate-pulse' : ''
+                }`}
+                title="Vote for Change"
+              >
+                🗳️
+                <span className="font-black tabular-nums">
+                  ${formatMoney(pool?.balance ?? 0)}
+                </span>
+              </button>
+
               {/* Mobile Inbox */}
               <button
                 onClick={() => setShowInbox(true)}
@@ -409,6 +444,7 @@ export default function Navbar() {
       {isCEO && <PaycheckSidebar isOpen={showPaychecks} onClose={() => setShowPaychecks(false)} />}
       {isLoggedIn && <BudgetSidebar isOpen={showBudget} onClose={() => setShowBudget(false)} />}
       <GitCommitsModal isOpen={showGitCommits} onClose={() => setShowGitCommits(false)} />
+      <VoteForChangeModal isOpen={showVoteModal} onClose={() => setShowVoteModal(false)} />
     </>
   );
 }

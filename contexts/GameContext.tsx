@@ -5222,7 +5222,18 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       remainingAmount,
     };
     window.dispatchEvent(new CustomEvent('yates-tax-collected', { detail: taxData }));
-    
+
+    // Route wealth tax into the company tax pool (Vote for Change)
+    supabase
+      .rpc('add_to_tax_pool', {
+        p_amount: Math.min(taxAmount, 1e38),
+        p_source: 'wealth_tax',
+        p_description: `Wealth tax ${Math.round(taxRate * 100)}%`,
+      })
+      .then(({ error }) => {
+        if (error) console.error('[TaxVote] failed to route wealth tax into pool:', error);
+      });
+
     console.log(`💀 WEALTH TAX: Collected ${Math.round(taxRate * 100)}% ($${taxAmount.toLocaleString()}) from player with $${gameState.yatesDollars.toLocaleString()}`);
     
     // Reset the guard after a delay to allow future tax (next day)

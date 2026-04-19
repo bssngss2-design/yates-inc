@@ -9,11 +9,13 @@ import { PaycheckProvider } from "@/contexts/PaycheckContext";
 import { GameProvider } from "@/contexts/GameContext";
 // Stock feature removed
 import { BudgetProvider } from "@/contexts/BudgetContext";
+import { TaxVoteProvider } from "@/contexts/TaxVoteContext";
 import Navbar from "@/components/Navbar";
 import DisclaimerWarning from "@/components/DisclaimerWarning";
 import PaycheckPopup from "@/components/PaycheckPopup";
 import MaintenanceMode from "@/components/MaintenanceMode";
 import PasswordSetupPopup from "@/components/PasswordSetupPopup";
+import ActiveChangeBanner from "@/components/ActiveChangeBanner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -46,17 +48,20 @@ export default function RootLayout({
               <GameProvider>
                 <BudgetProvider>
                   <PaycheckProvider>
-                    <CartProvider>
-                        <MailProvider>
-                        <DisclaimerWarning />
-                        <Navbar />
-                        <PaycheckPopup />
-                        <PasswordSetupPopup />
-                        <main className="pt-16 min-h-screen bg-gray-50 dark:bg-gray-900">
-                          {children}
-                        </main>
-                      </MailProvider>
-                    </CartProvider>
+                    <TaxVoteProvider>
+                      <CartProvider>
+                          <MailProvider>
+                          <DisclaimerWarning />
+                          <Navbar />
+                          <ActiveChangeBanner />
+                          <PaycheckPopup />
+                          <PasswordSetupPopup />
+                          <main className="pt-16 min-h-screen bg-gray-50 dark:bg-gray-900">
+                            {children}
+                          </main>
+                        </MailProvider>
+                      </CartProvider>
+                    </TaxVoteProvider>
                   </PaycheckProvider>
                 </BudgetProvider>
               </GameProvider>

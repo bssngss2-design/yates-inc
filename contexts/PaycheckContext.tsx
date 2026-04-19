@@ -4,7 +4,25 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { EmployeePaycheck, PaycheckContextType } from '@/types';
 import { useAuth } from './AuthContext';
 import { supabase } from '@/lib/supabase';
-import { calculateFinalAmount, getTaxBreakdown } from '@/utils/taxes';
+import { calculateFinalAmount, getTaxBreakdown, calculateTax } from '@/utils/taxes';
+
+// Small portion of collected paycheck tax that feeds the Tax Pool (Vote for Change)
+const PAYCHECK_TAX_TO_POOL_PCT = 0.25;
+
+async function fundTaxPoolFromPaycheckTax(salaryAmount: number, employeeId: string): Promise<void> {
+  try {
+    const taxTotal = calculateTax(salaryAmount, 'paycheck');
+    const toPool = taxTotal * PAYCHECK_TAX_TO_POOL_PCT;
+    if (!isFinite(toPool) || toPool <= 0) return;
+    await supabase.rpc('add_to_tax_pool', {
+      p_amount: toPool,
+      p_source: 'paycheck_tax',
+      p_description: `Paycheck tax cut from ${employeeId}`,
+    });
+  } catch (err) {
+    console.error('[TaxVote] failed to route paycheck tax to pool:', err);
+  }
+}
 
 // Helper to drain from company budget when paycheck is processed
 async function drainBudgetForPaycheck(amount: number, employeeId: string): Promise<void> {
@@ -174,6 +192,9 @@ export function PaycheckProvider({ children }: { children: React.ReactNode }) {
       // Drain from company budget (full salary amount)
       await drainBudgetForPaycheck(paycheck.salary_amount, paycheck.employee_id);
 
+      // Route a small % of paycheck tax into the Vote-for-Change pool
+      await fundTaxPoolFromPaycheckTax(paycheck.salary_amount, paycheck.employee_id);
+
       await fetchPaychecks();
     } catch (err) {
       console.error('Error processing paycheck:', err);
@@ -207,6 +228,9 @@ export function PaycheckProvider({ children }: { children: React.ReactNode }) {
 
           // Drain from company budget (full salary amount)
           await drainBudgetForPaycheck(paycheck.salary_amount, paycheck.employee_id);
+
+          // Route a small % of paycheck tax into the Vote-for-Change pool
+          await fundTaxPoolFromPaycheckTax(paycheck.salary_amount, paycheck.employee_id);
 
           // Save pending notification for the popup
           const pendingData = {

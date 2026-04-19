@@ -3627,7 +3627,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
   }, [userId, userType]);
 
   // Side Levels — progress check
-  const getSideLevelProgress = useCallback(() => {
+  const getSideLevelProgress = useCallback((): { level: number; requirements: Record<string, { current: number; required: number; met: boolean }> } | null => {
     if (!gameState.chosenPath) return null;
     const level = gameState.sideLevel || 1;
     if (level >= SIDE_LEVEL_MAX) return { level, requirements: {} };

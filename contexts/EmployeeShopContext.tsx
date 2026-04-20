@@ -183,6 +183,11 @@ export function EmployeeShopProvider({ children }: { children: React.ReactNode }
       if (!employeeId) return { success: false, error: 'Not logged in' };
       if (currentBalance < item.price) return { success: false, error: 'Not enough cash' };
 
+      // Logan is the CEO — he can't promote himself, that'd be insane.
+      if (employeeId === '000001' && item.effectType === 'promotion_yellow_name') {
+        return { success: false, error: "You're literally the CEO. Promote yourself to what, God?" };
+      }
+
       // Enforce oneTime
       if (item.oneTime) {
         const existing = effects.find(

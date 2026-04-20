@@ -47,11 +47,12 @@ function timeLeft(endIso: string): string {
 interface VoteForChangeModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialTab?: Tab;
 }
 
 type Tab = 'active' | 'proposals' | 'suggest' | 'history';
 
-export default function VoteForChangeModal({ isOpen, onClose }: VoteForChangeModalProps) {
+export default function VoteForChangeModal({ isOpen, onClose, initialTab }: VoteForChangeModalProps) {
   const { employee, isLoggedIn } = useAuth();
   const { client, isClient } = useClient();
   const {
@@ -64,7 +65,12 @@ export default function VoteForChangeModal({ isOpen, onClose }: VoteForChangeMod
     setProposalTimer,
   } = useTaxVote();
 
-  const [tab, setTab] = useState<Tab>('active');
+  const [tab, setTab] = useState<Tab>(initialTab ?? 'active');
+
+  // Sync to prop when it changes (e.g. admin bar jumps directly to 'proposals')
+  useEffect(() => {
+    if (isOpen && initialTab) setTab(initialTab);
+  }, [isOpen, initialTab]);
   const [suggestTitle, setSuggestTitle] = useState('');
   const [suggestDesc, setSuggestDesc] = useState('');
   const [submitting, setSubmitting] = useState(false);

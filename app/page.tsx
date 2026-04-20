@@ -12,14 +12,6 @@ export default function Home() {
   const { employee, isLoggedIn } = useAuth();
   const { createConversation } = useMail();
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [showAddTask, setShowAddTask] = useState(false);
-  const [newTask, setNewTask] = useState({
-    task_name: '',
-    description: '',
-    assigned_to_id: '',
-    assigned_to_name: '',
-    due_date: '',
-  });
   const [client, setClient] = useState<any>(null);
 
   const isCEO = employee?.id === '000001';
@@ -81,57 +73,6 @@ export default function Home() {
         );
       }
 
-      fetchTasks();
-    }
-  };
-
-  const deleteTask = async (taskId: string) => {
-    if (!isCEO) return;
-
-    const { error } = await supabase.from('tasks').delete().eq('id', taskId);
-
-    if (!error) {
-      fetchTasks();
-    }
-  };
-
-  const updateDueDate = async (taskId: string, newDate: string) => {
-    if (!isCEO) return;
-
-    const { error } = await supabase
-      .from('tasks')
-      .update({ due_date: newDate })
-      .eq('id', taskId);
-
-    if (!error) {
-      fetchTasks();
-    }
-  };
-
-  const addTask = async () => {
-    if (!isCEO || !employee) return;
-
-    const { error } = await supabase.from('tasks').insert([
-      {
-        task_name: newTask.task_name,
-        description: newTask.description,
-        assigned_to_id: newTask.assigned_to_id,
-        assigned_to_name: newTask.assigned_to_name,
-        progress_percentage: 0,
-        due_date: newTask.due_date,
-        created_by_id: employee.id,
-      },
-    ]);
-
-    if (!error) {
-      setShowAddTask(false);
-      setNewTask({
-        task_name: '',
-        description: '',
-        assigned_to_id: '',
-        assigned_to_name: '',
-        due_date: '',
-      });
       fetchTasks();
     }
   };
@@ -212,75 +153,11 @@ export default function Home() {
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
               <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 dark:text-white">WTBD - What To Be Done</h2>
               {isCEO && (
-                <button
-                  onClick={() => setShowAddTask(!showAddTask)}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm sm:text-base w-full sm:w-auto touch-manipulation"
-                >
-                  {showAddTask ? 'Cancel' : 'Add Task'}
-                </button>
+                <span className="text-xs italic text-gray-500 dark:text-gray-400">
+                  Manage tasks from the 👑 Admin Bar
+                </span>
               )}
             </div>
-
-            {/* Add Task Form (CEO Only) */}
-            {showAddTask && isCEO && (
-              <div className="bg-gray-50 dark:bg-gray-700 p-4 sm:p-6 rounded-lg mb-6">
-                <h3 className="text-lg sm:text-xl font-semibold mb-4 text-gray-900 dark:text-white">Create New Task</h3>
-                <div className="space-y-4">
-                  <input
-                    type="text"
-                    placeholder="Task Name"
-                    value={newTask.task_name}
-                    onChange={(e) =>
-                      setNewTask({ ...newTask, task_name: e.target.value })
-                    }
-                    className="w-full border dark:border-gray-600 rounded px-3 py-2 dark:bg-gray-800 dark:text-white text-sm sm:text-base"
-                  />
-                  <textarea
-                    placeholder="Description (optional)"
-                    value={newTask.description}
-                    onChange={(e) =>
-                      setNewTask({ ...newTask, description: e.target.value })
-                    }
-                    className="w-full border dark:border-gray-600 rounded px-3 py-2 dark:bg-gray-800 dark:text-white text-sm sm:text-base"
-                    rows={3}
-                  />
-                  <div className="grid md:grid-cols-2 gap-4">
-                    <input
-                      type="text"
-                      placeholder="Assigned To ID (e.g., 39187)"
-                      value={newTask.assigned_to_id}
-                      onChange={(e) =>
-                        setNewTask({ ...newTask, assigned_to_id: e.target.value })
-                      }
-                      className="border dark:border-gray-600 rounded px-3 py-2 dark:bg-gray-800 dark:text-white text-sm sm:text-base"
-                    />
-                    <input
-                      type="text"
-                      placeholder="Assigned To Name"
-                      value={newTask.assigned_to_name}
-                      onChange={(e) =>
-                        setNewTask({ ...newTask, assigned_to_name: e.target.value })
-                      }
-                      className="border dark:border-gray-600 rounded px-3 py-2 dark:bg-gray-800 dark:text-white text-sm sm:text-base"
-                    />
-                  </div>
-                  <input
-                    type="date"
-                    value={newTask.due_date}
-                    onChange={(e) =>
-                      setNewTask({ ...newTask, due_date: e.target.value })
-                    }
-                    className="w-full border dark:border-gray-600 rounded px-3 py-2 dark:bg-gray-800 dark:text-white text-sm sm:text-base"
-                  />
-                  <button
-                    onClick={addTask}
-                    className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 text-sm sm:text-base w-full sm:w-auto touch-manipulation"
-                  >
-                    Create Task
-                  </button>
-                </div>
-              </div>
-            )}
 
             {/* Tasks List */}
             <div className="grid md:grid-cols-2 gap-4 sm:gap-6">
@@ -293,14 +170,6 @@ export default function Home() {
                   >
                     <div className="flex justify-between items-start mb-3">
                       <h3 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white pr-2">{task.task_name}</h3>
-                      {isCEO && (
-                        <button
-                          onClick={() => deleteTask(task.id)}
-                          className="text-red-500 hover:text-red-700 p-2 touch-manipulation"
-                        >
-                          🗑️
-                        </button>
-                      )}
                     </div>
                     {task.description && (
                       <p className="text-gray-600 dark:text-gray-400 text-xs sm:text-sm mb-3">
@@ -338,16 +207,7 @@ export default function Home() {
                       <span className="text-gray-600 dark:text-gray-400">
                         <strong>Due:</strong>
                       </span>
-                      {isCEO ? (
-                        <input
-                          type="date"
-                          value={task.due_date}
-                          onChange={(e) => updateDueDate(task.id, e.target.value)}
-                          className="border dark:border-gray-600 rounded px-2 py-1 text-xs sm:text-sm dark:bg-gray-800 dark:text-white"
-                        />
-                      ) : (
-                        <span className="text-gray-700 dark:text-gray-300">{new Date(task.due_date).toLocaleDateString()}</span>
-                      )}
+                      <span className="text-gray-700 dark:text-gray-300">{new Date(task.due_date).toLocaleDateString()}</span>
                     </div>
                   </div>
                 );
@@ -356,7 +216,7 @@ export default function Home() {
 
             {tasks.length === 0 && (
               <p className="text-center text-gray-500 dark:text-gray-400 py-8">
-                No tasks yet. {isCEO && 'Click "Add Task" to create one!'}
+                No tasks yet. {isCEO && 'Add one from the 👑 Admin Bar.'}
               </p>
             )}
           </div>

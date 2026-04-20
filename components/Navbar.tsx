@@ -10,14 +10,12 @@ import { useTaxVote } from '@/contexts/TaxVoteContext';
 import { useState } from 'react';
 import CartSidebar from './CartSidebar';
 import InboxSidebar from './InboxSidebar';
-import PaycheckSidebar from './PaycheckSidebar';
 // Stock Market removed - feature deprecated
 import BudgetSidebar from './BudgetSidebar';
 import GitCommitsModal from './GitCommitsModal';
 import VoteForChangeModal from './VoteForChangeModal';
 import EmployeeShopModal from './EmployeeShopModal';
 import EmployeeName from './EmployeeName';
-
 // Format money with K, M, B, T, Q suffixes
 function formatMoney(amount: number): string {
   if (!isFinite(amount)) return '∞';
@@ -47,7 +45,7 @@ export default function Navbar() {
   const { pool, activeProposal } = useTaxVote();
   const [showCart, setShowCart] = useState(false);
   const [showInbox, setShowInbox] = useState(false);
-  const [showPaychecks, setShowPaychecks] = useState(false);
+  // showPaychecks moved into /admin page (CEO-only consolidation).
   // Stock market removed
   const [showBudget, setShowBudget] = useState(false);
   const [showGitCommits, setShowGitCommits] = useState(false);
@@ -153,15 +151,15 @@ export default function Navbar() {
                 </button>
               )}
 
-              {/* Paychecks button - CEO only */}
+              {/* Admin page - CEO only (consolidates Paychecks, WTBD, Tax Timer, EOTM, Hire/Fire) */}
               {isCEO && (
-                <button
-                  onClick={() => setShowPaychecks(true)}
-                  className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 font-medium flex items-center gap-1"
-                  title="Manage Paychecks"
+                <Link
+                  href="/admin"
+                  className="relative font-bold text-xs px-2.5 py-1.5 rounded-lg border-2 border-black bg-gradient-to-br from-purple-600 via-indigo-600 to-purple-700 text-white hover:from-purple-700 hover:to-indigo-700 transition-all shadow-sm hover:shadow-md flex items-center gap-1"
+                  title="Admin"
                 >
-                  💰 Paychecks
-                </button>
+                  👑 Admin
+                </Link>
               )}
               
               {/* Inbox button */}
@@ -441,17 +439,15 @@ export default function Navbar() {
                         🛍️ Shop w ur money
                       </button>
                     )}
-                    {/* CEO Paychecks button - mobile */}
+                    {/* Admin page - mobile, CEO only */}
                     {isCEO && (
-                      <button
-                        onClick={() => {
-                          setShowPaychecks(true);
-                          setMobileMenuOpen(false);
-                        }}
-                        className="w-full text-left text-green-600 dark:text-green-400 font-medium mb-3"
+                      <Link
+                        href="/admin"
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="block w-full text-left font-bold text-purple-700 dark:text-purple-400 mb-3"
                       >
-                        💰 Manage Paychecks
-                      </button>
+                        👑 Admin
+                      </Link>
                     )}
                     <button
                       onClick={() => {
@@ -472,7 +468,6 @@ export default function Navbar() {
       </nav>
       <CartSidebar isOpen={showCart} onClose={() => setShowCart(false)} />
       <InboxSidebar isOpen={showInbox} onClose={() => setShowInbox(false)} />
-      {isCEO && <PaycheckSidebar isOpen={showPaychecks} onClose={() => setShowPaychecks(false)} />}
       {isLoggedIn && <BudgetSidebar isOpen={showBudget} onClose={() => setShowBudget(false)} />}
       <GitCommitsModal isOpen={showGitCommits} onClose={() => setShowGitCommits(false)} />
       <VoteForChangeModal isOpen={showVoteModal} onClose={() => setShowVoteModal(false)} />

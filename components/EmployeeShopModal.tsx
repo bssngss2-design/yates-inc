@@ -118,7 +118,9 @@ export default function EmployeeShopModal({ isOpen, onClose }: Props) {
               const ownsOneTime = item.oneTime && hasEffect(employee.id, item.effectType);
               const balance = item.currency === 'yates' ? yates : walters;
               const canAfford = balance >= item.price;
-              const disabled = busyItem === item.id || ownsOneTime || !canAfford;
+              const isLoganBlocked =
+                employee.id === '000001' && item.effectType === 'promotion_yellow_name';
+              const disabled = busyItem === item.id || ownsOneTime || !canAfford || isLoganBlocked;
 
               const effect = getEffect(employee.id, item.effectType);
               const usesLeft =
@@ -189,11 +191,13 @@ export default function EmployeeShopModal({ isOpen, onClose }: Props) {
                     >
                       {busyItem === item.id
                         ? '...'
-                        : ownsOneTime
-                          ? 'Owned'
-                          : !canAfford
-                            ? 'Broke'
-                            : 'Buy'}
+                        : isLoganBlocked
+                          ? 'You ARE the boss'
+                          : ownsOneTime
+                            ? 'Owned'
+                            : !canAfford
+                              ? 'Broke'
+                              : 'Buy'}
                     </button>
                   </div>
                 </div>

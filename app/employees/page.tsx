@@ -3,6 +3,7 @@
 import { employees as staticEmployees, firedEmployees as staticFired } from '@/utils/products';
 import Image from 'next/image';
 import EmployeeName from '@/components/EmployeeName';
+import EmployeeOfTheMonthPlaque from '@/components/EmployeeOfTheMonthPlaque';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useMemo } from 'react';
 
@@ -74,6 +75,12 @@ export default function EmployeesPage() {
     <div className="min-h-screen py-8 sm:py-12 bg-gray-50 dark:bg-gray-900">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <h1 className="text-3xl sm:text-4xl font-bold mb-6 sm:mb-8 text-gray-900 dark:text-white">Our Team</h1>
+
+        {/* Employee of the Month plaque */}
+        <div className="mb-10 flex justify-center">
+          <EmployeeOfTheMonthPlaque size="lg" />
+        </div>
+
         <div className="grid md:grid-cols-2 gap-4 sm:gap-6 lg:gap-8">
           {activeList.map((employee) => (
             <div

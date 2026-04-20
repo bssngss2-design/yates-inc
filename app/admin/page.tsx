@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
@@ -30,11 +30,38 @@ export default function AdminPage() {
   const [showTaxTimer, setShowTaxTimer] = useState(false);
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [eotmJustSet, setEotmJustSet] = useState<string | null>(null);
+  const [hireDone, setHireDone] = useState<string | null>(null);
+  const [fireDone, setFireDone] = useState<string | null>(null);
 
   const [eotmPick, setEotmPick] = useState('');
   const [hireForm, setHireForm] = useState({ employeeId: '', name: '', role: '', bio: '' });
   const [firePick, setFirePick] = useState('');
   const [fireReason, setFireReason] = useState('');
+
+  // Auto-dismiss flash toast after 4s
+  useEffect(() => {
+    if (!flash) return;
+    const t = setTimeout(() => setFlash(null), 4000);
+    return () => clearTimeout(t);
+  }, [flash]);
+
+  // Auto-dismiss inline confirmations after 5s
+  useEffect(() => {
+    if (!eotmJustSet) return;
+    const t = setTimeout(() => setEotmJustSet(null), 5000);
+    return () => clearTimeout(t);
+  }, [eotmJustSet]);
+  useEffect(() => {
+    if (!hireDone) return;
+    const t = setTimeout(() => setHireDone(null), 5000);
+    return () => clearTimeout(t);
+  }, [hireDone]);
+  useEffect(() => {
+    if (!fireDone) return;
+    const t = setTimeout(() => setFireDone(null), 5000);
+    return () => clearTimeout(t);
+  }, [fireDone]);
 
   const isLogan = employee?.id === '000001';
 
@@ -104,8 +131,11 @@ export default function AdminPage() {
     setBusy(false);
     if (res.success) {
       setOk(`👑 ${pick.name} is now Employee of the Month`);
+      setEotmJustSet(pick.name);
       setEotmPick('');
-    } else setErr(res.error || 'Failed');
+    } else {
+      setErr(res.error || 'Failed — did you run sql/ADMIN_BAR_SQL.sql?');
+    }
   };
 
   const handleHire = async () => {
@@ -124,8 +154,9 @@ export default function AdminPage() {
     setBusy(false);
     if (res.success) {
       setOk(`📥 Hired ${hireForm.name}`);
+      setHireDone(hireForm.name);
       setHireForm({ employeeId: '', name: '', role: '', bio: '' });
-    } else setErr(res.error || 'Failed');
+    } else setErr(res.error || 'Failed — did you run sql/ADMIN_BAR_SQL.sql?');
   };
 
   const handleFire = async () => {
@@ -145,9 +176,10 @@ export default function AdminPage() {
     setBusy(false);
     if (res.success) {
       setOk(`💀 ${target.name} fired`);
+      setFireDone(target.name);
       setFirePick('');
       setFireReason('');
-    } else setErr(res.error || 'Failed');
+    } else setErr(res.error || 'Failed — did you run sql/ADMIN_BAR_SQL.sql?');
   };
 
   return (
@@ -174,18 +206,30 @@ export default function AdminPage() {
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-        {flash && (
-          <div
-            className={`rounded-lg px-4 py-3 text-sm font-semibold border-2 ${
-              flash.kind === 'ok'
-                ? 'bg-green-50 dark:bg-green-950/30 text-green-800 dark:text-green-200 border-green-300'
-                : 'bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-200 border-red-300'
-            }`}
-          >
-            {flash.text}
+      {/* Floating toast (fixed — always visible on scroll) */}
+      {flash && (
+        <div
+          className={`fixed top-20 right-4 z-[250] max-w-sm rounded-xl px-4 py-3 text-sm font-bold border-2 shadow-2xl animate-[slideInRight_0.2s_ease-out] ${
+            flash.kind === 'ok'
+              ? 'bg-green-500 text-white border-green-700'
+              : 'bg-red-500 text-white border-red-700'
+          }`}
+        >
+          <div className="flex items-start gap-2">
+            <span className="text-lg">{flash.kind === 'ok' ? '✅' : '❌'}</span>
+            <span>{flash.text}</span>
+            <button
+              onClick={() => setFlash(null)}
+              className="ml-2 opacity-70 hover:opacity-100"
+              aria-label="Close"
+            >
+              ×
+            </button>
           </div>
-        )}
+        </div>
+      )}
+
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6">
 
         {/* Quick Actions */}
         <section className="bg-white dark:bg-gray-800 rounded-2xl shadow border border-gray-200 dark:border-gray-700 p-5">
@@ -269,14 +313,20 @@ export default function AdminPage() {
               <button
                 disabled={!eotmPick || busy}
                 onClick={handleSetEotm}
-                className={`w-full font-bold py-2 rounded-lg ${
+                className={`w-full font-bold py-2 rounded-lg transition-all ${
                   !eotmPick || busy
                     ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 cursor-not-allowed'
-                    : 'bg-yellow-500 hover:bg-yellow-600 text-white'
+                    : 'bg-yellow-500 hover:bg-yellow-600 text-white shadow hover:shadow-lg'
                 }`}
               >
                 {busy ? 'Saving...' : 'Crown them 👑'}
               </button>
+              {eotmJustSet && (
+                <div className="bg-yellow-100 dark:bg-yellow-900/40 border-2 border-yellow-500 rounded-lg px-3 py-2 text-sm font-bold text-yellow-900 dark:text-yellow-100 animate-[fadeIn_0.3s_ease-out]">
+                  👑 Crowned <span className="underline">{eotmJustSet}</span>! Check the plaque on the
+                  homepage / employees page.
+                </div>
+              )}
             </div>
           </div>
         </section>
@@ -327,6 +377,11 @@ export default function AdminPage() {
               >
                 {busy ? 'Hiring...' : 'Hire 📥'}
               </button>
+              {hireDone && (
+                <div className="bg-green-100 dark:bg-green-900/40 border-2 border-green-500 rounded-lg px-3 py-2 text-sm font-bold text-green-900 dark:text-green-100 animate-[fadeIn_0.3s_ease-out]">
+                  📥 {hireDone} is on the team.
+                </div>
+              )}
             </div>
             {hired.length > 0 && (
               <div className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
@@ -391,6 +446,11 @@ export default function AdminPage() {
               >
                 {busy ? 'Firing...' : 'Fire 💀'}
               </button>
+              {fireDone && (
+                <div className="bg-red-100 dark:bg-red-900/40 border-2 border-red-500 rounded-lg px-3 py-2 text-sm font-bold text-red-900 dark:text-red-100 animate-[fadeIn_0.3s_ease-out]">
+                  💀 {fireDone} has been fired. Cold.
+                </div>
+              )}
             </div>
 
             {fired.length > 0 && (

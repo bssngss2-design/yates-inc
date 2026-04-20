@@ -6,6 +6,8 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Task } from '@/types';
 import CatEasterEgg from '@/components/CatEasterEgg';
+import EmployeeOfTheMonthPlaque from '@/components/EmployeeOfTheMonthPlaque';
+import Link from 'next/link';
 
 
 export default function Home() {
@@ -110,12 +112,16 @@ export default function Home() {
       )}
 
       {/* Hero Section */}
-      <section className="bg-gradient-to-r from-purple-600 via-pink-600 to-red-600 text-white py-12 sm:py-16 md:py-20">
+      <section className="relative bg-gradient-to-r from-purple-600 via-pink-600 to-red-600 text-white py-12 sm:py-16 md:py-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-4 sm:mb-6">Welcome to Yates Inc.</h1>
           <p className="text-base sm:text-lg md:text-xl max-w-3xl">
             This is a Photoshop company focused mainly on selling photoshop services, and some other random products.
           </p>
+        </div>
+        {/* EOTM plaque — overlaps between hero and About section; offset from right-side logged-in badge */}
+        <div className="hidden md:block absolute right-[200px] lg:right-[220px] -bottom-20 lg:-bottom-28 z-20 pointer-events-none">
+          <EmployeeOfTheMonthPlaque size="sm" />
         </div>
       </section>
 
@@ -153,9 +159,12 @@ export default function Home() {
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
               <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 dark:text-white">WTBD - What To Be Done</h2>
               {isCEO && (
-                <span className="text-xs italic text-gray-500 dark:text-gray-400">
-                  Manage tasks from the 👑 Admin Bar
-                </span>
+                <Link
+                  href="/admin"
+                  className="text-xs italic text-gray-500 dark:text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 hover:underline"
+                >
+                  Manage tasks from the 👑 Admin page
+                </Link>
               )}
             </div>
 
@@ -216,7 +225,7 @@ export default function Home() {
 
             {tasks.length === 0 && (
               <p className="text-center text-gray-500 dark:text-gray-400 py-8">
-                No tasks yet. {isCEO && 'Add one from the 👑 Admin Bar.'}
+                No tasks yet. {isCEO && 'Add one from the 👑 Admin page.'}
               </p>
             )}
           </div>

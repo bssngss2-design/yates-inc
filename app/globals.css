@@ -84,6 +84,29 @@ body::before {
   image-rendering: crisp-edges;
 }
 
+/* Admin page micro-animations */
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* Spinning animation for cat */
 @keyframes spin-slow {
   from {

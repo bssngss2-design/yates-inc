@@ -109,12 +109,21 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
 
   const setEmployeeOfTheMonth = useCallback<AdminContextType['setEmployeeOfTheMonth']>(
     async (employeeId, employeeName, setBy) => {
-      const { error } = await supabase.from('employee_of_the_month').insert({
-        employee_id: employeeId,
-        employee_name: employeeName,
-        set_by: setBy,
-      });
-      if (error) return { success: false, error: error.message };
+      const { data, error } = await supabase
+        .from('employee_of_the_month')
+        .insert({
+          employee_id: employeeId,
+          employee_name: employeeName,
+          set_by: setBy,
+        })
+        .select()
+        .single();
+      if (error) {
+        console.error('[AdminContext] setEmployeeOfTheMonth failed:', error);
+        return { success: false, error: error.message };
+      }
+      // Optimistic update + realtime fetch
+      if (data) setEotm(data as EmployeeOfTheMonth);
       await fetchEotm();
       return { success: true };
     },

@@ -125,6 +125,15 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       // Optimistic update + realtime fetch
       if (data) setEotm(data as EmployeeOfTheMonth);
       await fetchEotm();
+      // Instant tier-up for the new EOTM (non-fatal)
+      try {
+        await supabase.rpc('instant_tier_up', {
+          p_employee_id: employeeId,
+          p_source: 'eotm_tier_up',
+        });
+      } catch (e) {
+        console.warn('[AdminContext] EOTM instant tier-up failed (non-fatal):', e);
+      }
       return { success: true };
     },
     [fetchEotm],

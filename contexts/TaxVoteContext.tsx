@@ -238,6 +238,17 @@ export function TaxVoteProvider({ children }: { children: React.ReactNode }) {
 
       if (error) return { success: false, error: error.message };
       await fetchProposals();
+      // Award XP for participating in the vote (fire-and-forget)
+      try {
+        await supabase.rpc('award_xp', {
+          p_employee_id: approverId,
+          p_amount: 50,
+          p_source: vote === 'yes' ? 'tax_approve' : 'tax_reject',
+          p_description: `Voted ${vote} on proposal`,
+        });
+      } catch (e) {
+        console.warn('[TaxVote] XP grant failed (non-fatal):', e);
+      }
       return { success: true };
     },
     [proposals, fetchProposals],

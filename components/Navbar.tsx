@@ -16,6 +16,7 @@ import GitCommitsModal from './GitCommitsModal';
 import VoteForChangeModal from './VoteForChangeModal';
 import EmployeeShopModal from './EmployeeShopModal';
 import EmployeeName from './EmployeeName';
+import { shouldShowRole } from './TierBadge';
 // Format money with K, M, B, T, Q suffixes
 function formatMoney(amount: number): string {
   if (!isFinite(amount)) return '∞';
@@ -215,7 +216,7 @@ export default function Navbar() {
                         client?.username
                       )}
                     </span>
-                    {isLoggedIn && employee && (
+                    {isLoggedIn && employee && shouldShowRole(employee.id) && (
                       <span className="text-xs text-blue-600 dark:text-blue-400">
                         {employee.role}
                       </span>
@@ -398,7 +399,7 @@ export default function Navbar() {
                       <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
                         {isLoggedIn && employee ? employee.name : client?.username}
                       </div>
-                      {isLoggedIn && employee && (
+                      {isLoggedIn && employee && shouldShowRole(employee.id) && (
                         <div className="text-xs text-blue-600 dark:text-blue-400">
                           {employee.role}
                         </div>

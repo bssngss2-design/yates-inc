@@ -12,6 +12,7 @@ import { BudgetProvider } from "@/contexts/BudgetContext";
 import { TaxVoteProvider } from "@/contexts/TaxVoteContext";
 import { EmployeeShopProvider } from "@/contexts/EmployeeShopContext";
 import { AdminProvider } from "@/contexts/AdminContext";
+import { TierProvider } from "@/contexts/TierContext";
 import Navbar from "@/components/Navbar";
 import DisclaimerWarning from "@/components/DisclaimerWarning";
 import PaycheckPopup from "@/components/PaycheckPopup";
@@ -20,6 +21,7 @@ import PasswordSetupPopup from "@/components/PasswordSetupPopup";
 import ActiveChangeBanner from "@/components/ActiveChangeBanner";
 import MotivationPackFloater from "@/components/shop/MotivationPackFloater";
 import WalkingBomb from "@/components/shop/WalkingBomb";
+import XpTicker from "@/components/XpTicker";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -55,6 +57,7 @@ export default function RootLayout({
                     <TaxVoteProvider>
                       <EmployeeShopProvider>
                         <AdminProvider>
+                        <TierProvider>
                         <CartProvider>
                             <MailProvider>
                             <DisclaimerWarning />
@@ -64,11 +67,13 @@ export default function RootLayout({
                             <PasswordSetupPopup />
                             <MotivationPackFloater />
                             <WalkingBomb />
+                            <XpTicker />
                             <main className="pt-16 min-h-screen bg-gray-50 dark:bg-gray-900">
                               {children}
                             </main>
                           </MailProvider>
                         </CartProvider>
+                        </TierProvider>
                         </AdminProvider>
                       </EmployeeShopProvider>
                     </TaxVoteProvider>

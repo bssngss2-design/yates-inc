@@ -267,6 +267,20 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
         created_by: employee?.id || 'system',
       });
 
+      // Award XP for contributions over 1M (non-fatal)
+      if (employee?.id && amount >= 1_000_000) {
+        try {
+          await supabase.rpc('award_xp', {
+            p_employee_id: employee.id,
+            p_amount: 30,
+            p_source: 'budget_contribution',
+            p_description: description?.slice(0, 120) || null,
+          });
+        } catch (e) {
+          console.warn('[Budget] XP grant failed (non-fatal):', e);
+        }
+      }
+
       await fetchBudget();
     } catch (err) {
       console.error('Error adding to active budget:', err);

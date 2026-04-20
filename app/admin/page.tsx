@@ -10,6 +10,8 @@ import { employees as staticEmployees } from '@/utils/products';
 import WTBDManagerModal from '@/components/admin/WTBDManagerModal';
 import PaycheckSidebar from '@/components/PaycheckSidebar';
 import VoteForChangeModal from '@/components/VoteForChangeModal';
+import TierBadge from '@/components/TierBadge';
+import { useTier, xpToNextTier } from '@/contexts/TierContext';
 
 export default function AdminPage() {
   const { employee, isLoggedIn } = useAuth();
@@ -24,6 +26,7 @@ export default function AdminPage() {
     unfireEmployee,
   } = useAdmin();
   const { proposals } = useTaxVote();
+  const { getTier, awardXp } = useTier();
 
   const [showWTBD, setShowWTBD] = useState(false);
   const [showPaychecks, setShowPaychecks] = useState(false);
@@ -38,6 +41,10 @@ export default function AdminPage() {
   const [hireForm, setHireForm] = useState({ employeeId: '', name: '', role: '', bio: '' });
   const [firePick, setFirePick] = useState('');
   const [fireReason, setFireReason] = useState('');
+  const [xpPick, setXpPick] = useState('');
+  const [xpAmount, setXpAmount] = useState('');
+  const [xpReason, setXpReason] = useState('');
+  const [xpDone, setXpDone] = useState<string | null>(null);
 
   // Auto-dismiss flash toast after 4s
   useEffect(() => {
@@ -62,6 +69,11 @@ export default function AdminPage() {
     const t = setTimeout(() => setFireDone(null), 5000);
     return () => clearTimeout(t);
   }, [fireDone]);
+  useEffect(() => {
+    if (!xpDone) return;
+    const t = setTimeout(() => setXpDone(null), 5000);
+    return () => clearTimeout(t);
+  }, [xpDone]);
 
   const isLogan = employee?.id === '000001';
 
@@ -180,6 +192,40 @@ export default function AdminPage() {
       setFirePick('');
       setFireReason('');
     } else setErr(res.error || 'Failed — did you run sql/ADMIN_BAR_SQL.sql?');
+  };
+
+  const handleGiveXp = async () => {
+    if (!xpPick) {
+      setErr('Pick someone to give XP to');
+      return;
+    }
+    const amt = parseInt(xpAmount, 10);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      setErr('Enter a positive XP amount');
+      return;
+    }
+    const target = roster.find((r) => r.id === xpPick);
+    if (!target) return;
+    setBusy(true);
+    const res = await awardXp(
+      target.id,
+      amt,
+      'manual_grant',
+      xpReason.trim() || `Manual grant by Logan`,
+    );
+    setBusy(false);
+    if (res.success) {
+      setOk(
+        res.tieredUp
+          ? `🎉 ${target.name} tiered up to T${res.tier}! (+${amt} XP)`
+          : `✨ +${amt} XP to ${target.name} (T${res.tier}, ${res.xp}/${res.xpToNext})`,
+      );
+      setXpDone(target.name);
+      setXpAmount('');
+      setXpReason('');
+    } else {
+      setErr(res.error || 'Failed — did you run sql/EMPLOYEE_TIERS_SQL.sql?');
+    }
   };
 
   return (
@@ -496,6 +542,108 @@ export default function AdminPage() {
             )}
           </section>
         </div>
+
+        {/* Give XP / Tiers */}
+        <section className="bg-white dark:bg-gray-800 rounded-2xl shadow border border-gray-200 dark:border-gray-700 p-5">
+          <h2 className="text-xs uppercase tracking-wider font-black text-gray-500 dark:text-gray-400 mb-3">
+            ✨ Give XP (Employee Tiers)
+          </h2>
+          <div className="grid md:grid-cols-2 gap-6 items-start">
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-gray-700 dark:text-gray-300">
+                Employee
+              </label>
+              <select
+                value={xpPick}
+                onChange={(e) => setXpPick(e.target.value)}
+                className="w-full border dark:border-gray-600 rounded px-3 py-2 dark:bg-gray-900 dark:text-white text-sm"
+              >
+                <option value="">Select...</option>
+                {roster.map((r) => {
+                  const t = getTier(r.id);
+                  return (
+                    <option key={r.id} value={r.id}>
+                      {r.name} — T{t?.current_tier ?? 1} ({t?.current_xp ?? 0}/
+                      {xpToNextTier(t?.current_tier ?? 1)} XP)
+                    </option>
+                  );
+                })}
+              </select>
+
+              <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mt-2">
+                XP Amount
+              </label>
+              <input
+                type="number"
+                min={1}
+                placeholder="e.g. 500"
+                value={xpAmount}
+                onChange={(e) => setXpAmount(e.target.value)}
+                className="w-full border dark:border-gray-600 rounded px-3 py-2 dark:bg-gray-900 dark:text-white text-sm"
+              />
+
+              <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mt-2">
+                Reason (optional)
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. fixed the login bug"
+                value={xpReason}
+                onChange={(e) => setXpReason(e.target.value)}
+                className="w-full border dark:border-gray-600 rounded px-3 py-2 dark:bg-gray-900 dark:text-white text-sm"
+              />
+
+              <button
+                disabled={!xpPick || !xpAmount || busy}
+                onClick={handleGiveXp}
+                className={`w-full font-bold py-2 rounded-lg mt-2 transition-all ${
+                  !xpPick || !xpAmount || busy
+                    ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 cursor-not-allowed'
+                    : 'bg-purple-600 hover:bg-purple-700 text-white shadow hover:shadow-lg'
+                }`}
+              >
+                {busy ? 'Granting...' : 'Grant XP ✨'}
+              </button>
+
+              {xpDone && (
+                <div className="bg-purple-100 dark:bg-purple-900/40 border-2 border-purple-500 rounded-lg px-3 py-2 text-sm font-bold text-purple-900 dark:text-purple-100 animate-[fadeIn_0.3s_ease-out]">
+                  ✨ Granted XP to <span className="underline">{xpDone}</span>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <div className="text-xs font-bold text-gray-700 dark:text-gray-300 mb-2">
+                Current roster
+              </div>
+              <div className="max-h-64 overflow-y-auto space-y-1 pr-1">
+                {roster.map((r) => {
+                  const t = getTier(r.id);
+                  const tier = t?.current_tier ?? 1;
+                  const xp = t?.current_xp ?? 0;
+                  const next = xpToNextTier(tier);
+                  return (
+                    <div
+                      key={r.id}
+                      className="flex items-center justify-between bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-2 py-1.5 text-xs"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <TierBadge employeeId={r.id} size="xs" />
+                        <span className="font-bold truncate">{r.name}</span>
+                      </div>
+                      <div className="text-[11px] text-gray-500 shrink-0">
+                        {tier >= 100 ? 'MAX' : `${xp}/${next}`}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+          <div className="text-[11px] text-gray-500 italic mt-3">
+            Auto XP: tax votes (50), budget deposits ≥$1M (30), /game session tick (10 every 5 min). EOTM = instant tier-up.
+          </div>
+        </section>
 
         <div className="text-center text-xs text-gray-500 italic pt-2">
           Heads up: the Wyatt-approval email flow for Fire is deferred — fire is immediate.

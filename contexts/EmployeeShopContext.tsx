@@ -49,9 +49,12 @@ interface EmployeeShopContextType {
   hasNasaPc: (employeeId: string) => boolean;
   hasActiveBomb: (employeeId: string) => boolean;
   motivationUsesRemaining: (employeeId: string) => number;
+  caffeineUsesRemaining: (employeeId: string) => number;
+  officePlantStacks: (employeeId: string) => number;
 
   buyItem: (item: ShopItem, employeeId: string, currentBalance: number, otherBalance: number) => Promise<BuyResult>;
   consumeMotivationUse: (employeeId: string) => Promise<BuyResult>;
+  consumeCaffeineUse: (employeeId: string) => Promise<BuyResult>;
   refresh: () => Promise<void>;
 }
 
@@ -170,6 +173,23 @@ export function EmployeeShopProvider({ children }: { children: React.ReactNode }
     },
     [getEffect],
   );
+  const caffeineUsesRemaining = useCallback(
+    (employeeId: string): number => {
+      const e = getEffect(employeeId, 'caffeine_overdose');
+      return e?.uses_remaining ?? 0;
+    },
+    [getEffect],
+  );
+  const officePlantStacks = useCallback(
+    (employeeId: string): number => {
+      // Office plant uses the uses_remaining column as a stack counter (max 5)
+      const e = effects.find(
+        (x) => x.employee_id === employeeId && x.effect_type === 'office_plant',
+      );
+      return e?.uses_remaining ?? 0;
+    },
+    [effects],
+  );
 
   const myEffects = useMemo(
     () => (employee ? effects.filter((e) => e.employee_id === employee.id && isEffectLive(e)) : []),
@@ -194,6 +214,17 @@ export function EmployeeShopProvider({ children }: { children: React.ReactNode }
           (e) => e.employee_id === employeeId && e.effect_type === item.effectType && isEffectLive(e),
         );
         if (existing) return { success: false, error: 'You already own this' };
+      }
+
+      // Enforce maxStacks (stackable items like office plant)
+      if (item.maxStacks) {
+        const existing = effects.find(
+          (e) => e.employee_id === employeeId && e.effect_type === item.effectType,
+        );
+        const currentStacks = existing?.uses_remaining ?? 0;
+        if (currentStacks >= item.maxStacks) {
+          return { success: false, error: `Maxed out (${item.maxStacks}/${item.maxStacks})` };
+        }
       }
 
       // 1) Deduct from paycheck balance
@@ -304,6 +335,41 @@ export function EmployeeShopProvider({ children }: { children: React.ReactNode }
     [effects, fetchEffects],
   );
 
+  const consumeCaffeineUse = useCallback<EmployeeShopContextType['consumeCaffeineUse']>(
+    async (employeeId) => {
+      const existing = effects.find(
+        (e) => e.employee_id === employeeId && e.effect_type === 'caffeine_overdose' && isEffectLive(e),
+      );
+      if (!existing || !existing.uses_remaining || existing.uses_remaining <= 0) {
+        return { success: false, error: 'No caffeine left' };
+      }
+      const { error } = await supabase
+        .from('employee_shop_effects')
+        .update({
+          uses_remaining: existing.uses_remaining - 1,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existing.id);
+      if (error) return { success: false, error: error.message };
+      await fetchEffects();
+      return { success: true };
+    },
+    [effects, fetchEffects],
+  );
+
+  // Sync the current employee's office-plant stack count to localStorage so
+  // GameContext can read it without creating a circular dependency.
+  useEffect(() => {
+    if (!employee) return;
+    const stacks = officePlantStacks(employee.id);
+    try {
+      localStorage.setItem('yates-office-plant-stacks', String(stacks));
+      window.dispatchEvent(
+        new CustomEvent('yates-office-plant-changed', { detail: { stacks } }),
+      );
+    } catch {}
+  }, [employee, officePlantStacks]);
+
   return (
     <EmployeeShopContext.Provider
       value={{
@@ -318,8 +384,11 @@ export function EmployeeShopProvider({ children }: { children: React.ReactNode }
         hasNasaPc,
         hasActiveBomb,
         motivationUsesRemaining,
+        caffeineUsesRemaining,
+        officePlantStacks,
         buyItem,
         consumeMotivationUse,
+        consumeCaffeineUse,
         refresh,
       }}
     >

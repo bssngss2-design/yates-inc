@@ -2237,6 +2237,60 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     return Date.now() < motivationBoostUntilRef.current ? 2 : 1;
   }, []);
 
+  // Caffeine Overdose: 5x for 30s, then 0.5x for 2 min.
+  const caffeineBoostUntilRef = useRef<number>(0);
+  const caffeineCrashUntilRef = useRef<number>(0);
+  useEffect(() => {
+    try {
+      const b = localStorage.getItem('yates-caffeine-boost-until');
+      const c = localStorage.getItem('yates-caffeine-crash-until');
+      if (b) {
+        const n = parseInt(b, 10);
+        if (!isNaN(n)) caffeineBoostUntilRef.current = n;
+      }
+      if (c) {
+        const n = parseInt(c, 10);
+        if (!isNaN(n)) caffeineCrashUntilRef.current = n;
+      }
+    } catch {}
+    const onCaffeine = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.boostUntil) caffeineBoostUntilRef.current = detail.boostUntil;
+      if (detail?.crashUntil) caffeineCrashUntilRef.current = detail.crashUntil;
+    };
+    window.addEventListener('yates-caffeine-boost', onCaffeine);
+    return () => window.removeEventListener('yates-caffeine-boost', onCaffeine);
+  }, []);
+  const getCaffeineMultiplier = useCallback(() => {
+    const now = Date.now();
+    if (now < caffeineBoostUntilRef.current) return 5;
+    if (now < caffeineCrashUntilRef.current) return 0.5;
+    return 1;
+  }, []);
+
+  // Office Plant: +1% passive income per stack (max 5 stacks = +5%).
+  const officePlantStacksRef = useRef<number>(0);
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('yates-office-plant-stacks');
+      if (stored) {
+        const n = parseInt(stored, 10);
+        if (!isNaN(n)) officePlantStacksRef.current = Math.min(5, Math.max(0, n));
+      }
+    } catch {}
+    const onChange = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (typeof detail?.stacks === 'number') {
+        officePlantStacksRef.current = Math.min(5, Math.max(0, detail.stacks));
+      }
+    };
+    window.addEventListener('yates-office-plant-changed', onChange);
+    return () => window.removeEventListener('yates-office-plant-changed', onChange);
+  }, []);
+  const getOfficePlantMultiplier = useCallback(() => {
+    return 1 + officePlantStacksRef.current * 0.01;
+  }, []);
+
   const mineRock = useCallback(() => {
     const state = gameStateRef.current;
     
@@ -2451,6 +2505,12 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         clickPower = Math.ceil(clickPower * motivationMult);
       }
 
+      // Caffeine Overdose (5x boost / 0.5x crash)
+      const caffeineMult = getCaffeineMultiplier();
+      if (caffeineMult !== 1) {
+        clickPower = Math.max(1, Math.ceil(clickPower * caffeineMult));
+      }
+
       clickPower = Math.max(1, clickPower); // Ensure at least 1 damage
       
       const newHP = Math.max(0, prev.currentRockHP - clickPower);
@@ -2473,6 +2533,9 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       earnedMoney *= (templeCurseMoneyPenalty || 1); // Temple curse penalties
       if (motivationMult > 1) {
         earnedMoney *= motivationMult; // Motivation Pack boost
+      }
+      if (caffeineMult !== 1) {
+        earnedMoney *= caffeineMult; // Caffeine: 5x boost or 0.5x crash
       }
       earnedMoney = safeMoney(earnedMoney);
       
@@ -5197,8 +5260,12 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
 
         // 20% of click money per mine, every 0.5s
         const motivationMult = getMotivationMultiplier();
+        const caffeineMult = getCaffeineMultiplier();
+        const officePlantMult = getOfficePlantMultiplier();
         const clickMoney = safeMoney(currentRock.moneyPerBreak * prev.prestigeMultiplier);
-        const passiveIncome = safeMoney(clickMoney * 0.20 * mineCount * motivationMult);
+        const passiveIncome = safeMoney(
+          clickMoney * 0.20 * mineCount * motivationMult * caffeineMult * officePlantMult,
+        );
 
         return {
           ...prev,

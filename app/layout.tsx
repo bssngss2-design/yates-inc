@@ -20,6 +20,7 @@ import MaintenanceMode from "@/components/MaintenanceMode";
 import PasswordSetupPopup from "@/components/PasswordSetupPopup";
 import ActiveChangeBanner from "@/components/ActiveChangeBanner";
 import MotivationPackFloater from "@/components/shop/MotivationPackFloater";
+import CaffeineFloater from "@/components/shop/CaffeineFloater";
 import WalkingBomb from "@/components/shop/WalkingBomb";
 import XpTicker from "@/components/XpTicker";
 
@@ -66,6 +67,7 @@ export default function RootLayout({
                             <PaycheckPopup />
                             <PasswordSetupPopup />
                             <MotivationPackFloater />
+                            <CaffeineFloater />
                             <WalkingBomb />
                             <XpTicker />
                             <main className="pt-16 min-h-screen bg-gray-50 dark:bg-gray-900">

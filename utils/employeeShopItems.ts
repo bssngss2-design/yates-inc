@@ -6,6 +6,8 @@ export type ShopEffectType =
   | 'energy_bomb'              // walking bomb on screen for 2 days (time-based)
   | 'motivation_pack'          // spawns a clickable pill (uses_remaining, consumable)
   | 'promotion_yellow_name'    // bright yellow name across the site (permanent, one-time buy)
+  | 'caffeine_overdose'        // consumable: 5x boost 30s then 0.5x crash 2min
+  | 'office_plant'             // stackable (max 5): +1% passive income per stack, permanent
   ;
 
 export interface ShopItem {
@@ -23,6 +25,8 @@ export interface ShopItem {
   usesPerPurchase?: number;
   /** For time-based effects (energy bomb): how long the effect lasts, in ms. */
   durationMs?: number;
+  /** For stackable permanent items (office plant): cap on uses_remaining. */
+  maxStacks?: number;
 }
 
 export const EMPLOYEE_SHOP_ITEMS: ShopItem[] = [
@@ -75,6 +79,33 @@ export const EMPLOYEE_SHOP_ITEMS: ShopItem[] = [
     effectType: 'motivation_pack',
     oneTime: false,
     usesPerPurchase: 1,
+  },
+  {
+    id: 'caffeine_overdose',
+    name: 'Caffeine Overdose',
+    tagline: '5x boost for 30 seconds — then you CRASH',
+    description:
+      'Chug it and get 5x click power + 5x earnings for 30 seconds. Right after, you crash: 2 minutes at HALF speed. Use it to nuke a prestige or regret it forever.',
+    price: 800_000,
+    currency: 'yates',
+    image: '/shop/CaffeineOverdose.png',
+    effectType: 'caffeine_overdose',
+    oneTime: false,
+    usesPerPurchase: 1,
+  },
+  {
+    id: 'office_plant',
+    name: 'Office Plant',
+    tagline: '+1% passive income per plant (max 5)',
+    description:
+      'A single boring monstera. Gives +1% passive income permanently. Stack up to 5 plants for a whole +5% jungle of productivity.',
+    price: 500_000,
+    currency: 'yates',
+    image: '/shop/OfficePlant.png',
+    effectType: 'office_plant',
+    oneTime: false,
+    usesPerPurchase: 1,
+    maxStacks: 5,
   },
   {
     id: 'promotion_certificate',

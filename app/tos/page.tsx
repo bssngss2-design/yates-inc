@@ -9,7 +9,8 @@ export default function TOSPage() {
     DO NOT expect the product to arrive because WE ARE <span className="text-3xl">NOT</span> SELLING ANYTHING IN HERE!!
     by the way, we are not afilliated with the people who made the products, also none of the jobs that 
     we have are not actually real, like we aren't actually lawyers, or like the Proffecional Photoshop Editors, aren't actually professional.
-    please do not sue us tks.
+    please do not sue us tk. Also WE DO NOT save any of you personal information, and if you place anything in the Card section we won't save, 
+    cache, or anything that means save data. Please don't slime us out.
     </p>
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8">

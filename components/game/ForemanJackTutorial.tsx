@@ -15,7 +15,7 @@ interface TutorialStep {
 const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'welcome',
-    dialog: "Hey there, rookie! I'm Foreman Jack. Welcome to the mines of Yates Inc. Let me show you around!",
+    dialog: "Hey there, rookie! I'm Foreman Jack. Welcome to the mines of Yates Co. Let me show you around!",
     action: 'none',
   },
   {

@@ -74,7 +74,7 @@ export function MailProvider({ children }: { children: React.ReactNode }) {
 
   // Update browser tab title when there are unread messages
   useEffect(() => {
-    const baseTitle = 'Yates Inc.';
+    const baseTitle = 'Yates Co.';
     if (unreadCount > 0) {
       document.title = `(${unreadCount}) ${baseTitle}`;
     } else {

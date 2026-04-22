@@ -35,7 +35,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Yates Inc. - The Future of Absurd Commerce",
+  title: "Yates Co. - The Future of Absurd Commerce",
   description: "Premium products with innovative pricing models",
 };
 

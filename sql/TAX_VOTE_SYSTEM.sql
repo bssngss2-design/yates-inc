@@ -115,12 +115,23 @@ RETURNS NUMERIC
 LANGUAGE plpgsql
 AS $fn$
 DECLARE
+  v_pool_id UUID;
   result_balance NUMERIC;
 BEGIN
+  -- Grab the single row's id (safe-update mode requires a keyed WHERE)
+  SELECT id INTO v_pool_id FROM tax_pool LIMIT 1;
+  IF v_pool_id IS NULL THEN
+    -- Shouldn't happen since we seed on table creation, but self-heal anyway
+    INSERT INTO tax_pool (balance, total_collected, total_spent)
+    VALUES (0, 0, 0)
+    RETURNING id INTO v_pool_id;
+  END IF;
+
   UPDATE tax_pool
   SET balance = tax_pool.balance + p_amount,
       total_collected = tax_pool.total_collected + p_amount,
       updated_at = NOW()
+  WHERE id = v_pool_id
   RETURNING tax_pool.balance INTO result_balance;
 
   INSERT INTO tax_pool_transactions (amount, direction, source, description)
@@ -143,15 +154,22 @@ RETURNS NUMERIC
 LANGUAGE plpgsql
 AS $fn$
 DECLARE
+  v_pool_id UUID;
   result_balance NUMERIC;
 BEGIN
+  SELECT id INTO v_pool_id FROM tax_pool LIMIT 1;
+  IF v_pool_id IS NULL THEN
+    RETURN NULL;
+  END IF;
+
   -- Only update if there's enough money; if not, RETURNING yields no row
   -- and result_balance stays NULL.
   UPDATE tax_pool
   SET balance = tax_pool.balance - p_amount,
       total_spent = tax_pool.total_spent + p_amount,
       updated_at = NOW()
-  WHERE tax_pool.balance >= p_amount
+  WHERE id = v_pool_id
+    AND tax_pool.balance >= p_amount
   RETURNING tax_pool.balance INTO result_balance;
 
   IF result_balance IS NULL THEN

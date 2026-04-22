@@ -8,6 +8,27 @@ import { useRouter } from 'next/navigation';
 
 type PaymentMethod = 'Pix' | 'PayPal' | 'Apple pay' | 'Google pay' | 'Venmo' | 'Wells Fargo' | 'Chase' | null;
 
+// Luhn check — used by every real card issuer in the world. If a number passes,
+// it's the digit shape of a real card and we refuse it on principle. This is the
+// site's anti-phishing safety net: even if someone ignored the red warning box,
+// we won't accept anything that looks like their actual card.
+function passesLuhn(raw: string): boolean {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length < 13 || digits.length > 19) return false;
+  let sum = 0;
+  let shouldDouble = false;
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let d = parseInt(digits[i], 10);
+    if (shouldDouble) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    sum += d;
+    shouldDouble = !shouldDouble;
+  }
+  return sum % 10 === 0;
+}
+
 export default function PayPage() {
   const { cart, clearCart, cartTotal } = useCart();
   const router = useRouter();
@@ -18,6 +39,7 @@ export default function PayPage() {
   const [expirationDate, setExpirationDate] = useState('');
   const [cvv, setCvv] = useState('');
   const [cardName, setCardName] = useState('');
+  const [cardError, setCardError] = useState('');
 
   const paymentMethods: PaymentMethod[] = [
     'Pix',
@@ -30,7 +52,17 @@ export default function PayPage() {
   ];
 
   const handlePayment = () => {
+    setCardError('');
     if (!tosAccepted || !cardNumber || !expirationDate || !cvv || !cardName) {
+      return;
+    }
+    // Refuse any number that looks like a real card. This is on purpose —
+    // the site is a joke, we don't want actual PAN data hitting the form
+    // even though we never submit it anywhere.
+    if (passesLuhn(cardNumber)) {
+      setCardError(
+        "Nope. That looks like a REAL card number and we refuse to accept those. This site is a joke — please use a made-up number like 1234 5678 9012 3456."
+      );
       return;
     }
     setStep('success');
@@ -150,6 +182,7 @@ export default function PayPage() {
                       type="text"
                       value={cardNumber}
                       onChange={(e) => {
+                        if (cardError) setCardError('');
                         // Only allow numbers
                         const value = e.target.value.replace(/\D/g, '');
                         // Limit to 16 digits
@@ -161,8 +194,31 @@ export default function PayPage() {
                       }}
                       placeholder="1234 5678 9012 3456"
                       maxLength={19}
-                      className="w-full border-2 border-gray-300 dark:border-gray-600 rounded-lg px-4 py-3 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-900 dark:text-white dark:bg-gray-700"
+                      className={`w-full border-2 rounded-lg px-4 py-3 focus:ring-2 text-gray-900 dark:text-white dark:bg-gray-700 ${
+                        cardNumber.replace(/\s/g, '').length >= 13 && passesLuhn(cardNumber)
+                          ? 'border-red-500 focus:border-red-600 focus:ring-red-200'
+                          : 'border-gray-300 dark:border-gray-600 focus:border-blue-500 focus:ring-blue-200'
+                      }`}
                     />
+                    {/* Live indicator so you can see the Luhn check working */}
+                    {cardNumber.replace(/\s/g, '').length >= 13 && (
+                      <p
+                        className={`mt-1.5 text-xs font-medium ${
+                          passesLuhn(cardNumber)
+                            ? 'text-red-600 dark:text-red-400'
+                            : 'text-green-600 dark:text-green-400'
+                        }`}
+                      >
+                        {passesLuhn(cardNumber)
+                          ? '⛔ This number passes the real-card checksum — we will NOT accept it.'
+                          : '✓ Looks fake (good). This number won\'t trip the real-card check.'}
+                      </p>
+                    )}
+                    {cardError && (
+                      <p className="mt-2 text-sm font-semibold text-red-600 dark:text-red-400">
+                        {cardError}
+                      </p>
+                    )}
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>

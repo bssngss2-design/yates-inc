@@ -15,6 +15,7 @@ import BudgetSidebar from './BudgetSidebar';
 import GitCommitsModal from './GitCommitsModal';
 import VoteForChangeModal from './VoteForChangeModal';
 import EmployeeShopModal from './EmployeeShopModal';
+import DeleteAccountModal from './DeleteAccountModal';
 import EmployeeName from './EmployeeName';
 import { shouldShowRole } from './TierBadge';
 // Format money with K, M, B, T, Q suffixes
@@ -52,6 +53,7 @@ export default function Navbar() {
   const [showGitCommits, setShowGitCommits] = useState(false);
   const [showVoteModal, setShowVoteModal] = useState(false);
   const [showShopModal, setShowShopModal] = useState(false);
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Check if current user is Logan (CEO)
@@ -72,7 +74,7 @@ export default function Navbar() {
                   className="text-xl sm:text-2xl font-bold text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
                   title="View Dev Status & Commits"
                 >
-                  INC.
+                  CO.
                 </button>
               </div>
               {!isLoggedIn && !isClient && (
@@ -263,6 +265,29 @@ export default function Navbar() {
                       />
                     </svg>
                   </button>
+                  {isClient && !isLoggedIn && (
+                    <button
+                      onClick={() => setShowDeleteAccount(true)}
+                      className="flex items-center gap-1 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/60 border border-red-300 dark:border-red-800 rounded-md px-2 py-1 text-xs font-semibold"
+                      title="Delete my account (CCPA right-to-delete)"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        strokeWidth={2}
+                        stroke="currentColor"
+                        className="w-4 h-4"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
+                        />
+                      </svg>
+                      <span className="hidden lg:inline">Delete</span>
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -460,6 +485,17 @@ export default function Navbar() {
                     >
                       Log out
                     </button>
+                    {isClient && !isLoggedIn && (
+                      <button
+                        onClick={() => {
+                          setShowDeleteAccount(true);
+                          setMobileMenuOpen(false);
+                        }}
+                        className="block mt-3 text-xs text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 underline"
+                      >
+                        Delete my account
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -473,6 +509,7 @@ export default function Navbar() {
       <GitCommitsModal isOpen={showGitCommits} onClose={() => setShowGitCommits(false)} />
       <VoteForChangeModal isOpen={showVoteModal} onClose={() => setShowVoteModal(false)} />
       <EmployeeShopModal isOpen={showShopModal} onClose={() => setShowShopModal(false)} />
+      <DeleteAccountModal isOpen={showDeleteAccount} onClose={() => setShowDeleteAccount(false)} />
     </>
   );
 }

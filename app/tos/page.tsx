@@ -9,11 +9,11 @@ export default function TOSPage() {
         {/* THE BIG RED NOTICE — now actually accurate */}
         <div className="bg-red-500 border-4 border-red-700 rounded-lg p-6 mb-8">
           <p className="text-white font-bold text-xl text-center">
-            THIS WEBSITE IS MADE AS A JOKE 100%, and it was made by middle schoolers (and
-            later high schoolers) just for fun!! DO NOT expect the product to arrive because
-            WE ARE <span className="text-3xl">NOT</span> SELLING ANYTHING IN HERE!! By the
-            way, we are not affiliated with the people who made the products, and none of
-            the jobs listed are real — we aren&apos;t actual lawyers, Professional Photoshop
+            THIS WEBSITE IS MADE AS A JOKE 100%, and it was made by students just for
+            fun!! DO NOT expect the product to arrive because WE ARE{' '}
+            <span className="text-3xl">NOT</span> SELLING ANYTHING IN HERE!! By the way,
+            we are not affiliated with the people who made the products, and none of the
+            jobs listed are real — we aren&apos;t actual lawyers, Professional Photoshop
             Editors aren&apos;t actually professional, etc. Please do not sue us tk.
           </p>
           <p className="text-white font-bold text-base text-center mt-4 border-t-2 border-white/40 pt-4">
@@ -37,15 +37,17 @@ export default function TOSPage() {
           <div className="space-y-6 text-gray-800 dark:text-gray-300">
             <div>
               <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
-                A. &quot;Yates Inc.&quot; is not a real corporation
+                A. &quot;Yates Co.&quot; is not a real company
               </h3>
               <p>
-                &quot;Yates Inc.&quot; is a parody brand name used for comedic purposes. We are
-                not a registered corporation, LLC, or any other legal business entity. No
-                goods or services are actually offered for sale. No real currency changes
-                hands anywhere on this site. The &quot;Inc.&quot; in the name is part of the
-                joke, the same way a lemonade stand can call itself &quot;Mega Corp&quot;
-                without anyone calling the SEC.
+                &quot;Yates Co.&quot; (formerly stylized &quot;Yates Inc.&quot; — same
+                joke, dropped the &quot;Inc.&quot; because California Business &amp;
+                Professions Code § 17910.5 says you can&apos;t use &quot;Inc.&quot;
+                unless you&apos;re actually incorporated, and we&apos;re not) is a parody
+                brand name used for comedic purposes. We are not a registered
+                corporation, LLC, or any other legal business entity. No goods or
+                services are actually offered for sale. No real currency changes hands
+                anywhere on this site.
               </p>
             </div>
 
@@ -85,13 +87,19 @@ export default function TOSPage() {
               <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
                 C. Want your account deleted?
               </h3>
+              <p className="mb-2">
+                If you&apos;re a client (you signed up via the &quot;Make an account&quot;
+                link), there&apos;s a trash-can icon next to the logout button — click
+                it, type <code className="bg-gray-100 dark:bg-gray-900 px-1 rounded">DELETE</code>,
+                enter your password if you have one set, done. Your client row is wiped
+                from the database immediately.
+              </p>
               <p>
-                Easy. Send a message through the in-site Inbox to Logan (ID{' '}
+                If the button is broken or you&apos;re an employee account, send a
+                message through the in-site Inbox to Logan (ID{' '}
                 <code className="bg-gray-100 dark:bg-gray-900 px-1 rounded">000001</code>)
-                with the words &quot;delete my account&quot; and we&apos;ll wipe your user row,
-                paycheck balances, purchases, and game save. This usually happens within a
-                few days, because this is a hobby project, not Amazon. If something&apos;s
-                urgent, ping Logan on Discord.
+                with the words &quot;delete my account&quot; and we&apos;ll handle it
+                manually within a few days, because this is a hobby project, not Amazon.
               </p>
             </div>
 
@@ -116,6 +124,38 @@ export default function TOSPage() {
                 broken, weird, or concerning, just shoot us a message through the Inbox and
                 we&apos;ll look at it. We&apos;re not trying to deceive anyone — the giant
                 red box above and every product&apos;s absurd price should make that obvious.
+              </p>
+            </div>
+
+            <div>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+                F. Age requirement (COPPA)
+              </h3>
+              <p className="mb-2">
+                This site is <strong>not directed to children under 13</strong>. We do
+                not knowingly collect personal information from anyone under 13. To create
+                an account you have to tick a box confirming you&apos;re 13 or older — if
+                you&apos;re under 13, don&apos;t sign up.
+              </p>
+              <p>
+                If you&apos;re a parent or guardian and you think your under-13 kid made
+                an account anyway, message Logan (ID{' '}
+                <code className="bg-gray-100 dark:bg-gray-900 px-1 rounded">000001</code>)
+                through the Inbox or use the &quot;Delete my account&quot; button and
+                we&apos;ll nuke the account. No questions asked.
+              </p>
+            </div>
+
+            <div>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+                G. Stand-alone privacy page
+              </h3>
+              <p>
+                A condensed privacy-only version of Section B lives at{' '}
+                <a href="/privacy" className="text-blue-600 dark:text-blue-400 underline">
+                  /privacy
+                </a>{' '}
+                if you&apos;d rather link directly to that.
               </p>
             </div>
           </div>
@@ -227,7 +267,7 @@ export default function TOSPage() {
         </div>
 
         <p className="text-center text-xs text-gray-500 dark:text-gray-400 italic mt-6">
-          Last updated: April 20, 2026
+          Last updated: April 21, 2026
         </p>
       </div>
     </div>

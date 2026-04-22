@@ -132,7 +132,7 @@ export default function VoteForChangeModal({ isOpen, onClose, initialTab }: Vote
           <div>
             <h2 className="text-2xl sm:text-3xl font-black tracking-tight">🗳️ Vote for Change</h2>
             <p className="text-xs sm:text-sm opacity-80 mt-1">
-              Community-funded upgrades to Yates Inc. Your tax dollars at work.
+              Community-funded upgrades to Yates Co. Your tax dollars at work.
             </p>
           </div>
           <button

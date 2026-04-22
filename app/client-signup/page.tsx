@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 export default function ClientSignupPage() {
@@ -12,6 +12,45 @@ export default function ClientSignupPage() {
   const [error, setError] = useState('');
   const [mode, setMode] = useState<'signup' | 'login'>('signup');
   const [needsPassword, setNeedsPassword] = useState(false); // For existing users who need to enter password
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
+  const [under13, setUnder13] = useState(false);
+
+  // Honor the first-visit age answer: if the visitor said "under 13" at the
+  // disclaimer modal, block signup entirely (COPPA — we don't knowingly collect
+  // PII from under-13s).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const stored = localStorage.getItem('yates-is-13-plus');
+    if (stored === 'no') setUnder13(true);
+  }, []);
+
+  if (under13) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center py-12 px-4">
+        <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-lg p-8 shadow-xl text-center space-y-4">
+          <div className="text-5xl">👋</div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+            Come back when you&apos;re 13!
+          </h1>
+          <p className="text-sm text-gray-700 dark:text-gray-300">
+            You told us you&apos;re under 13. That&apos;s totally cool — you can
+            still browse the site and play the game as a guest — but we
+            can&apos;t let you make an account yet. It&apos;s a COPPA thing.
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 italic">
+            If that was a mistake, clear your browser storage (or use a
+            different browser) and you&apos;ll get the age question again.
+          </p>
+          <button
+            onClick={() => router.push('/')}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg"
+          >
+            Back to Home
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const validateUsername = (name: string): boolean => {
     // Only letters, numbers, and # allowed
@@ -40,6 +79,11 @@ export default function ClientSignupPage() {
 
     if (password !== confirmPassword) {
       setError('Passwords do not match!');
+      return;
+    }
+
+    if (!ageConfirmed) {
+      setError('You must confirm you are 13 or older to create an account.');
       return;
     }
 
@@ -222,6 +266,25 @@ export default function ClientSignupPage() {
             </>
           )}
 
+          {/* Age gate — COPPA: don't knowingly sign up under-13s */}
+          {mode === 'signup' && (
+            <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-800 rounded-lg">
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={ageConfirmed}
+                  onChange={(e) => setAgeConfirmed(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 cursor-pointer"
+                />
+                <span className="text-xs text-amber-900 dark:text-amber-200 leading-snug">
+                  I confirm I am <strong>13 years of age or older</strong>. This site
+                  is not directed to children under 13 and we don&apos;t knowingly
+                  collect info from them.
+                </span>
+              </label>
+            </div>
+          )}
+
           {/* Password field for login (shown if user has password or needsPassword is true) */}
           {mode === 'login' && (needsPassword || password) && (
             <div className="mb-4">
@@ -257,7 +320,7 @@ export default function ClientSignupPage() {
             onClick={mode === 'signup' ? handleRegister : handleLogin}
             disabled={
               isChecking || 
-              (mode === 'signup' && (!validateUsername(username) || password.length < 4 || password !== confirmPassword)) || 
+              (mode === 'signup' && (!validateUsername(username) || password.length < 4 || password !== confirmPassword || !ageConfirmed)) || 
               (mode === 'login' && !username.trim())
             }
             className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold text-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition"
@@ -267,13 +330,19 @@ export default function ClientSignupPage() {
               : (mode === 'signup' ? 'Create Account' : 'Log In')}
           </button>
 
-          <div className="mt-6 text-center">
+          <div className="mt-6 text-center space-y-2">
             <button
               onClick={() => router.push('/')}
-              className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+              className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white block mx-auto"
             >
               ← Back to Home
             </button>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              By signing up you agree to our{' '}
+              <a href="/tos" target="_blank" className="underline hover:text-gray-900 dark:hover:text-white">Terms</a>
+              {' '}and{' '}
+              <a href="/privacy" target="_blank" className="underline hover:text-gray-900 dark:hover:text-white">Privacy Policy</a>.
+            </p>
           </div>
         </div>
       </div>

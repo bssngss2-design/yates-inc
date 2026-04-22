@@ -43,7 +43,7 @@ export default function MaintenanceMode({ children }: { children: React.ReactNod
             </li>
           </ul>
           <p className="text-sm text-gray-500">
-            Check back soon! - Yates Inc. Team
+            Check back soon! - Yates Co. Team
           </p>
         </div>
         

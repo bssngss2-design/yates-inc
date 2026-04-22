@@ -17,6 +17,7 @@ export default function Home() {
   const [client, setClient] = useState<any>(null);
 
   const isCEO = employee?.id === '000001';
+  const hasBadge = !!(employee || client);
 
   // Check if client is logged in
   useEffect(() => {
@@ -114,14 +115,23 @@ export default function Home() {
       {/* Hero Section */}
       <section className="relative bg-gradient-to-r from-purple-600 via-pink-600 to-red-600 text-white py-12 sm:py-16 md:py-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-4 sm:mb-6">Welcome to Yates Inc.</h1>
-          <p className="text-base sm:text-lg md:text-xl max-w-3xl">
-            This is a Photoshop company focused mainly on selling photoshop services, and some other random products.
-          </p>
-        </div>
-        {/* EOTM plaque — overlaps between hero and About section; offset from right-side logged-in badge */}
-        <div className="hidden md:block absolute right-[200px] lg:right-[220px] -bottom-20 lg:-bottom-28 z-20 pointer-events-none">
-          <EmployeeOfTheMonthPlaque size="sm" />
+          <div className="flex items-start gap-6 lg:gap-10">
+            {/* Text column — reserve right-side space so the fixed "Logged in as" badge never overlaps the heading/paragraph */}
+            <div
+              className={`flex-1 min-w-0 ${
+                hasBadge ? 'pr-[120px] sm:pr-[220px] lg:pr-0' : ''
+              }`}
+            >
+              <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-4 sm:mb-6">Welcome to Yates Co.</h1>
+              <p className="text-base sm:text-lg md:text-xl max-w-3xl">
+                This is a Photoshop company focused mainly on selling photoshop services, and some other random products.
+              </p>
+            </div>
+            {/* EOTM plaque — only on lg+ where there's actually room; spills into About section below */}
+            <div className="hidden lg:block shrink-0 relative self-end -mb-24 xl:-mb-28 mr-[220px] z-20 pointer-events-none">
+              <EmployeeOfTheMonthPlaque size="sm" />
+            </div>
+          </div>
         </div>
       </section>
 
@@ -131,7 +141,7 @@ export default function Home() {
           <div className="bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-lg shadow-md">
             <h2 className="text-2xl sm:text-3xl font-bold mb-3 sm:mb-4 text-gray-900 dark:text-white">About Us</h2>
             <p className="text-sm sm:text-base text-gray-800 dark:text-gray-300 mb-3 sm:mb-4 leading-relaxed">
-              At Yates Inc., we believe in transparency and innovation.
+              At Yates Co., we believe in transparency and innovation.
               Our products come with cutting-edge pricing models that
               truly reflect their value proposition.
             </p>

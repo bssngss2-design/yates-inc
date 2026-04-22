@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
 const VISITOR_ID_KEY = 'yates-visitor-id';
+const AGE_LOCAL_KEY = 'yates-is-13-plus'; // mirror of the supabase value for fast client checks
 
 function generateVisitorId(): string {
   return 'visitor_' + Math.random().toString(36).substring(2) + Date.now().toString(36);
@@ -14,6 +15,7 @@ export default function DisclaimerWarning() {
   const [countdown, setCountdown] = useState(4);
   const [canClose, setCanClose] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [ageAnswer, setAgeAnswer] = useState<'yes' | 'no' | null>(null);
 
   useEffect(() => {
     checkIfSeenWarning();
@@ -22,7 +24,7 @@ export default function DisclaimerWarning() {
   // Countdown timer
   useEffect(() => {
     if (!showWarning) return;
-    
+
     if (countdown > 0) {
       const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
       return () => clearTimeout(timer);
@@ -33,28 +35,30 @@ export default function DisclaimerWarning() {
 
   const checkIfSeenWarning = async () => {
     try {
-      // Get or create visitor ID
       let visitorId = localStorage.getItem(VISITOR_ID_KEY);
       if (!visitorId) {
         visitorId = generateVisitorId();
         localStorage.setItem(VISITOR_ID_KEY, visitorId);
       }
 
-      // Check if this visitor has seen the warning
       const { data, error } = await supabase
         .from('warning_seen')
-        .select('id')
+        .select('id, is_13_plus')
         .eq('visitor_id', visitorId)
         .single();
 
       if (error && error.code !== 'PGRST116') {
-        // PGRST116 = no rows found, which is expected for new visitors
+        // PGRST116 = no rows, expected for new visitors
         console.error('Error checking warning status:', error);
       }
 
-      // If no record found, show the warning
-      if (!data) {
+      // Show the modal if: never seen before, OR seen but no age answer yet.
+      if (!data || data.is_13_plus === null || data.is_13_plus === undefined) {
         setShowWarning(true);
+      } else {
+        // Mirror the stored answer to localStorage so other components can read
+        // it synchronously without re-hitting Supabase.
+        localStorage.setItem(AGE_LOCAL_KEY, data.is_13_plus ? 'yes' : 'no');
       }
     } catch (err) {
       console.error('Error:', err);
@@ -64,16 +68,23 @@ export default function DisclaimerWarning() {
   };
 
   const handleClose = async () => {
-    if (!canClose) return;
+    if (!canClose || !ageAnswer) return;
+
+    const is13Plus = ageAnswer === 'yes';
 
     try {
       const visitorId = localStorage.getItem(VISITOR_ID_KEY);
       if (visitorId) {
-        // Mark as seen in Supabase
+        // Upsert — insert on first visit, update if the row already existed
+        // (e.g. legacy visitor who saw the old version of this modal).
         await supabase
           .from('warning_seen')
-          .insert({ visitor_id: visitorId });
+          .upsert(
+            { visitor_id: visitorId, is_13_plus: is13Plus },
+            { onConflict: 'visitor_id' }
+          );
       }
+      localStorage.setItem(AGE_LOCAL_KEY, is13Plus ? 'yes' : 'no');
     } catch (err) {
       console.error('Error saving warning status:', err);
     }
@@ -82,6 +93,8 @@ export default function DisclaimerWarning() {
   };
 
   if (isLoading || !showWarning) return null;
+
+  const closeReady = canClose && ageAnswer !== null;
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
@@ -101,26 +114,61 @@ export default function DisclaimerWarning() {
               <span className="text-red-400 font-bold text-xl">1.</span>
               <span>None of those items that you may find in the products section actually are ours, and we are <strong className="text-red-400">NOT</strong> selling ANY of them!</span>
             </p>
-            
+
             <p className="flex gap-3">
               <span className="text-red-400 font-bold text-xl">2.</span>
               <span>SO <strong className="text-red-400">DO NOT EXPECT</strong> ANY OF THEM TO ARRIVE!!</span>
             </p>
-            
+
             <p className="flex gap-3">
               <span className="text-red-400 font-bold text-xl">3.</span>
               <span>Also we have a billing section because it&apos;s cool, but <strong className="text-red-400">WE ARE NOT DELIVERING ANYTHING!</strong></span>
             </p>
-            
+
             <p className="flex gap-3">
               <span className="text-red-400 font-bold text-xl">4.</span>
               <span>And lastly <strong className="text-red-400">WE DO NOT</strong> save any of your credit card, or address so the information <strong className="text-green-400">ISN&apos;T BEING SAVED!</strong> AND <strong className="text-green-400">NOT STOLEN!</strong></span>
             </p>
-            
+
             <p className="flex gap-3">
               <span className="text-red-400 font-bold text-xl">5.</span>
-              <span>Visit <a href="/tos" className="text-blue-400 hover:text-blue-300 underline font-bold">yates-inc/tos</a> to learn more.</span>
+              <span>Visit <a href="/tos" className="text-blue-400 hover:text-blue-300 underline font-bold">yates-co/tos</a> or <a href="/privacy" className="text-blue-400 hover:text-blue-300 underline font-bold">/privacy</a> to learn more.</span>
             </p>
+          </div>
+
+          {/* Age gate - COPPA */}
+          <div className="mt-4 pt-4 border-t border-red-500/30">
+            <p className="text-white font-semibold mb-3">
+              Quick question — how old are you?
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setAgeAnswer('yes')}
+                className={`py-2 px-4 rounded-lg font-bold text-sm transition ${
+                  ageAnswer === 'yes'
+                    ? 'bg-green-600 text-white ring-2 ring-green-300'
+                    : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+                }`}
+              >
+                I&apos;m 13 or older
+              </button>
+              <button
+                onClick={() => setAgeAnswer('no')}
+                className={`py-2 px-4 rounded-lg font-bold text-sm transition ${
+                  ageAnswer === 'no'
+                    ? 'bg-yellow-600 text-white ring-2 ring-yellow-300'
+                    : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+                }`}
+              >
+                I&apos;m under 13
+              </button>
+            </div>
+            {ageAnswer === 'no' && (
+              <p className="text-xs text-yellow-300 mt-2 leading-snug">
+                No problem — you can still browse the site and play the game. You just
+                won&apos;t be able to make an account or use the inbox until you turn 13.
+              </p>
+            )}
           </div>
         </div>
 
@@ -128,15 +176,17 @@ export default function DisclaimerWarning() {
         <div className="px-6 pb-6 flex justify-center">
           <button
             onClick={handleClose}
-            disabled={!canClose}
+            disabled={!closeReady}
             className={`px-8 py-3 rounded-xl font-bold text-lg transition-all ${
-              canClose
+              closeReady
                 ? 'bg-green-600 hover:bg-green-500 text-white cursor-pointer hover:scale-105'
                 : 'bg-gray-700 text-gray-500 cursor-not-allowed'
             }`}
           >
-            {canClose ? (
+            {closeReady ? (
               'I Understand'
+            ) : !ageAnswer ? (
+              <span>Pick an age option above</span>
             ) : (
               <span className="flex items-center gap-2">
                 <span>Please wait...</span>
@@ -166,4 +216,3 @@ export default function DisclaimerWarning() {
     </div>
   );
 }
-

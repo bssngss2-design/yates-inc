@@ -388,7 +388,7 @@ export default function MiningGame({ onExit }: MiningGameProps) {
           <div className="text-8xl mb-6">🚫</div>
           <h1 className="text-4xl font-bold text-red-500 mb-4">BANNED</h1>
           <p className="text-white text-lg mb-4">
-            Your account has been banned from Yates Inc.
+            Your account has been banned from Yates Co.
           </p>
           {banReason && (
             <p className="text-gray-400 mb-6">

@@ -99,14 +99,14 @@ export const employees = [
     id: '000000',
     name: 'Nesh',
     role: 'Head Master',
-    bio: 'Nesh is the true Head Master of Yates Inc. This majestic dog handles all very important requests and makes the critical choices that shape the company. If you need something approved, Nesh is who you talk to. Woof.',
+    bio: 'Nesh is the true Head Master of Yates Co. This majestic dog handles all very important requests and makes the critical choices that shape the company. If you need something approved, Nesh is who you talk to. Woof.',
     images: ['/misc/nesh-1.jpeg', '/misc/nesh-2.jpeg', '/misc/nesh-3.jpeg'],
   },
   {
     id: '000001',
     name: 'Logan Wall Fencer',
     role: 'CEO',
-    bio: 'Logan, is the CEO and founder of Yates Inc. He has spend a lot of time and effort, making this the greatest company he could every think of.',
+    bio: 'Logan, is the CEO and founder of Yates Co. He has spend a lot of time and effort, making this the greatest company he could every think of.',
   },
   {
     id: '123456',

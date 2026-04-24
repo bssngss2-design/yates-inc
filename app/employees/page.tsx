@@ -5,6 +5,7 @@ import Image from 'next/image';
 import EmployeeName from '@/components/EmployeeName';
 import EmployeeOfTheMonthPlaque from '@/components/EmployeeOfTheMonthPlaque';
 import TierBadge, { shouldShowRole } from '@/components/TierBadge';
+import XpTierInfoPanel from '@/components/XpTierInfoPanel';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useMemo } from 'react';
 
@@ -75,8 +76,12 @@ export default function EmployeesPage() {
   return (
     <div className="min-h-screen py-8 sm:py-12 bg-gray-50 dark:bg-gray-900">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-start justify-between gap-4 mb-6 sm:mb-8">
-          <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white">Our Team</h1>
+        <div className="flex items-start justify-between gap-4 sm:gap-6 lg:gap-8 mb-6 sm:mb-8">
+          {/* Left column: heading + XP / tier rewards info panel */}
+          <div className="flex-1 min-w-0">
+            <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white">Our Team</h1>
+            <XpTierInfoPanel className="mt-4 sm:mt-6" />
+          </div>
           {/* Employee of the Month plaque — small, tucked top-right */}
           <div className="hidden sm:block shrink-0">
             <EmployeeOfTheMonthPlaque size="sm" />

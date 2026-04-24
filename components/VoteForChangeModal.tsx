@@ -254,7 +254,7 @@ export default function VoteForChangeModal({ isOpen, onClose, initialTab }: Vote
               <div className="bg-yellow-50 dark:bg-yellow-950/30 border-l-4 border-yellow-500 p-4 rounded-r">
                 <p className="text-sm text-gray-700 dark:text-gray-300">
                   Submit anything — a new feature, a party, a bonus. The 5 approvers
-                  (Logan, Bernardo, Yates, Wyatt, Suhas) will vote. 3 yes votes = approved.
+                  (Logan, Bernardo, Harris, Wyatt, Suhas) will vote. 3 yes votes = approved.
                 </p>
               </div>
 

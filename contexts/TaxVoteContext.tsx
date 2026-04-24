@@ -3,15 +3,18 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 
-// The 5 approvers: Logan, Bernardo, Yates, Wyatt, Suhas
-export const APPROVER_IDS = ['000001', '123456', '000000', '319736', '010101'] as const;
+// The 5 approvers: Logan, Bernardo, Harris, Wyatt, Suhas
+export const APPROVER_IDS = ['000001', '123456', '674121', '319736', '010101'] as const;
 export const LOGAN_ID = '000001';
 export const APPROVER_NAMES: Record<string, string> = {
   '000001': 'Logan',
   '123456': 'Bernardo',
-  '000000': 'Yates',
+  '674121': 'Harris',
   '319736': 'Wyatt',
   '010101': 'Suhas',
+  // Legacy: Yates (000000) was previously an approver — kept here so old vote
+  // history still renders a name instead of "undefined".
+  '000000': 'Yates',
 };
 
 export type ProposalStatus = 'pending' | 'approved' | 'rejected' | 'active' | 'completed';

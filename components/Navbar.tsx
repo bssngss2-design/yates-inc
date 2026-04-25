@@ -16,6 +16,7 @@ import GitCommitsModal from './GitCommitsModal';
 import VoteForChangeModal from './VoteForChangeModal';
 import EmployeeShopModal from './EmployeeShopModal';
 import DeleteAccountModal from './DeleteAccountModal';
+import EmployeesPanel from './EmployeesPanel';
 import EmployeeName from './EmployeeName';
 import { shouldShowRole } from './TierBadge';
 // Format money with K, M, B, T, Q suffixes
@@ -54,6 +55,7 @@ export default function Navbar() {
   const [showVoteModal, setShowVoteModal] = useState(false);
   const [showShopModal, setShowShopModal] = useState(false);
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
+  const [showUsersPanel, setShowUsersPanel] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Check if current user is Logan (CEO)
@@ -203,6 +205,16 @@ export default function Navbar() {
                   </span>
                 )}
               </button>
+
+              {/* Users — last item, plain text, employees only */}
+              {isLoggedIn && (
+                <button
+                  onClick={() => setShowUsersPanel(true)}
+                  className="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium"
+                >
+                  Users
+                </button>
+              )}
 
               {/* Logout button & Balance */}
               {(isLoggedIn || isClient) && (
@@ -465,6 +477,18 @@ export default function Navbar() {
                         🛍️ Shop w ur money
                       </button>
                     )}
+                    {/* Users panel - mobile, employees only */}
+                    {isLoggedIn && (
+                      <button
+                        onClick={() => {
+                          setShowUsersPanel(true);
+                          setMobileMenuOpen(false);
+                        }}
+                        className="w-full text-left font-bold text-purple-700 dark:text-purple-400 mb-3"
+                      >
+                        👥 Users
+                      </button>
+                    )}
                     {/* Admin page - mobile, CEO only */}
                     {isCEO && (
                       <Link
@@ -510,6 +534,9 @@ export default function Navbar() {
       <VoteForChangeModal isOpen={showVoteModal} onClose={() => setShowVoteModal(false)} />
       <EmployeeShopModal isOpen={showShopModal} onClose={() => setShowShopModal(false)} />
       <DeleteAccountModal isOpen={showDeleteAccount} onClose={() => setShowDeleteAccount(false)} />
+      {isLoggedIn && (
+        <EmployeesPanel isOpen={showUsersPanel} onClose={() => setShowUsersPanel(false)} />
+      )}
     </>
   );
 }

@@ -35,6 +35,15 @@ export default function DisclaimerWarning() {
 
   const checkIfSeenWarning = async () => {
     try {
+      // Fast path: if we already have an answer in localStorage, trust it and
+      // skip the modal entirely. Supabase is just a backup so the answer can
+      // survive across browsers — if it failed last time, localStorage is the
+      // source of truth on this device.
+      const localAnswer = localStorage.getItem(AGE_LOCAL_KEY);
+      if (localAnswer === 'yes' || localAnswer === 'no') {
+        return;
+      }
+
       let visitorId = localStorage.getItem(VISITOR_ID_KEY);
       if (!visitorId) {
         visitorId = generateVisitorId();
@@ -48,16 +57,15 @@ export default function DisclaimerWarning() {
         .single();
 
       if (error && error.code !== 'PGRST116') {
-        // PGRST116 = no rows, expected for new visitors
+        // PGRST116 = no rows, expected for new visitors. Anything else means
+        // the table/RLS is unhappy — show the modal so we can at least save
+        // the answer locally on this device.
         console.error('Error checking warning status:', error);
       }
 
-      // Show the modal if: never seen before, OR seen but no age answer yet.
       if (!data || data.is_13_plus === null || data.is_13_plus === undefined) {
         setShowWarning(true);
       } else {
-        // Mirror the stored answer to localStorage so other components can read
-        // it synchronously without re-hitting Supabase.
         localStorage.setItem(AGE_LOCAL_KEY, data.is_13_plus ? 'yes' : 'no');
       }
     } catch (err) {
@@ -72,6 +80,10 @@ export default function DisclaimerWarning() {
 
     const is13Plus = ageAnswer === 'yes';
 
+    // Save locally FIRST so the answer sticks even if Supabase is unhappy.
+    // Without this, an upsert error would leave the modal popping up forever.
+    localStorage.setItem(AGE_LOCAL_KEY, is13Plus ? 'yes' : 'no');
+
     try {
       const visitorId = localStorage.getItem(VISITOR_ID_KEY);
       if (visitorId) {
@@ -84,7 +96,6 @@ export default function DisclaimerWarning() {
             { onConflict: 'visitor_id' }
           );
       }
-      localStorage.setItem(AGE_LOCAL_KEY, is13Plus ? 'yes' : 'no');
     } catch (err) {
       console.error('Error saving warning status:', err);
     }

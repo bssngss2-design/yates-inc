@@ -20,72 +20,74 @@ interface GitCommitsModalProps {
   onClose: () => void;
 }
 
-const GITHUB_REPO = 'renantrendt/yates-inc';
+function formatDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return iso;
+  }
+}
 
 export default function GitCommitsModal({ isOpen, onClose }: GitCommitsModalProps) {
   const [commits, setCommits] = useState<GitCommit[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [stale, setStale] = useState(false);
   const [deployStatus, setDeployStatus] = useState<DeploymentStatus>({ status: 'unknown', message: 'Checking...' });
 
   useEffect(() => {
     if (!isOpen) return;
 
+    let cancelled = false;
+
     const fetchCommits = async () => {
       setLoading(true);
       setError(null);
+      setStale(false);
 
       try {
-        // Fetch ALL commits by paginating through GitHub API
-        let allCommits: any[] = [];
-        let page = 1;
-        let hasMore = true;
-        
-        while (hasMore && page <= 10) { // Max 10 pages (1000 commits)
-          const response = await fetch(
-            `https://api.github.com/repos/${GITHUB_REPO}/commits?per_page=100&page=${page}`
-          );
-          
-          if (!response.ok) {
-            throw new Error('Failed to fetch commits');
-          }
+        const response = await fetch('/api/github/commits');
+        const payload = await response.json().catch(() => null);
 
-          const data = await response.json();
-          
-          if (data.length === 0) {
-            hasMore = false;
-          } else {
-            allCommits = [...allCommits, ...data];
-            page++;
-          }
+        if (!response.ok || !payload?.commits) {
+          throw new Error(payload?.error || `HTTP ${response.status}`);
         }
-        
-        const formattedCommits: GitCommit[] = allCommits.map((commit: any) => ({
-          sha: commit.sha.substring(0, 7),
-          message: commit.commit.message.split('\n')[0], // First line only
-          author: commit.commit.author.name,
-          date: new Date(commit.commit.author.date).toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-          }),
-          url: commit.html_url,
+
+        if (cancelled) return;
+
+        const formatted: GitCommit[] = payload.commits.map((c: any) => ({
+          sha: c.sha,
+          message: c.message,
+          author: c.author,
+          date: formatDate(c.date),
+          url: c.url,
         }));
 
-        setCommits(formattedCommits);
-        
-        // Check deployment status (assume success if we got commits)
-        setDeployStatus({ status: 'success', message: 'Live & Running' });
-      } catch (err) {
-        setError('Could not fetch commits. Check network or rate limit.');
+        setCommits(formatted);
+        setStale(Boolean(payload.stale));
+        setDeployStatus({
+          status: 'success',
+          message: payload.stale ? 'Live (showing cached commits)' : 'Live & Running',
+        });
+      } catch (err: any) {
+        if (cancelled) return;
+        setError(`Could not fetch commits: ${err?.message ?? 'unknown error'}`);
         setDeployStatus({ status: 'unknown', message: 'Could not verify' });
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     fetchCommits();
+
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -197,7 +199,7 @@ export default function GitCommitsModal({ isOpen, onClose }: GitCommitsModalProp
         {/* Footer */}
         <div className="px-6 py-3 bg-gray-800/50 border-t border-gray-700 text-center">
           <p className="text-gray-500 text-xs">
-            {commits.length} commits loaded
+            {commits.length} commits loaded{stale ? ' • cached' : ''}
           </p>
         </div>
       </div>

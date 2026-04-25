@@ -8,6 +8,7 @@ import {
   APPROVER_IDS,
   APPROVER_NAMES,
   LOGAN_ID,
+  MAX_SCHEDULED_PROPOSALS,
   type ChangeProposal,
 } from '@/contexts/TaxVoteContext';
 
@@ -28,6 +29,43 @@ function formatMoney(amount: number): string {
   if (amount >= 1e6) return `${(amount / 1e6).toFixed(2)}M`;
   if (amount >= 1e3) return `${(amount / 1e3).toFixed(1)}K`;
   return amount.toFixed(0);
+}
+
+// Suffix -> multiplier. Mirrors the suffixes that formatMoney produces, plus a
+// few common aliases (e.g. "non" for nonillion, "dec" for decillion) so users
+// can type whatever feels natural. Order in the regex matters: longer suffixes
+// must be tried before shorter ones so "qi" doesn't match as "q" + "i".
+const SHORT_SUFFIX_MULTIPLIERS: Array<[string, number]> = [
+  ['tr', 1e42],
+  ['dr', 1e39],
+  ['un', 1e36],
+  ['dec', 1e33],
+  ['dc', 1e33],
+  ['non', 1e30],
+  ['no', 1e30],
+  ['oc', 1e27],
+  ['sp', 1e24],
+  ['sx', 1e21],
+  ['qi', 1e18],
+  ['q', 1e15],
+  ['t', 1e12],
+  ['b', 1e9],
+  ['m', 1e6],
+  ['k', 1e3],
+];
+
+function parseShortMoney(input: string): number | null {
+  const cleaned = input.trim().replace(/[\s,$_]/g, '').toLowerCase();
+  if (!cleaned) return null;
+  const match = cleaned.match(/^(-?\d*\.?\d+)([a-z]*)$/);
+  if (!match) return null;
+  const num = parseFloat(match[1]);
+  if (!isFinite(num)) return null;
+  const suffix = match[2];
+  if (!suffix) return num;
+  const found = SHORT_SUFFIX_MULTIPLIERS.find(([s]) => s === suffix);
+  if (!found) return null;
+  return num * found[1];
 }
 
 function timeLeft(endIso: string): string {
@@ -92,6 +130,10 @@ export default function VoteForChangeModal({ isOpen, onClose, initialTab }: Vote
 
   const pending = useMemo(() => proposals.filter((p) => p.status === 'pending'), [proposals]);
   const approved = useMemo(() => proposals.filter((p) => p.status === 'approved'), [proposals]);
+  const queuedCount = useMemo(
+    () => proposals.filter((p) => p.status === 'queued').length,
+    [proposals],
+  );
   const history = useMemo(
     () => proposals.filter((p) => ['rejected', 'completed'].includes(p.status)),
     [proposals],
@@ -239,6 +281,9 @@ export default function VoteForChangeModal({ isOpen, onClose, initialTab }: Vote
                         poolBalance={pool?.balance ?? 0}
                         hasActive={!!activeProposal}
                         activeTitle={activeProposal?.title}
+                        queuedCount={queuedCount}
+                        scheduledCount={(activeProposal ? 1 : 0) + queuedCount}
+                        maxScheduled={MAX_SCHEDULED_PROPOSALS}
                         onSetCost={setProposalCost}
                         onSetTimer={setProposalTimer}
                       />
@@ -476,6 +521,9 @@ function ApprovedProposalCard({
   poolBalance,
   hasActive,
   activeTitle,
+  queuedCount,
+  scheduledCount,
+  maxScheduled,
   onSetCost,
   onSetTimer,
 }: {
@@ -486,6 +534,9 @@ function ApprovedProposalCard({
   poolBalance: number;
   hasActive: boolean;
   activeTitle?: string;
+  queuedCount: number;
+  scheduledCount: number;
+  maxScheduled: number;
   onSetCost: (id: string, approverId: string, cost: number, pct?: number | null) => Promise<{ success: boolean; error?: string }>;
   onSetTimer: (id: string, approverId: string, durationMs: number) => Promise<{ success: boolean; error?: string }>;
 }) {
@@ -505,11 +556,12 @@ function ApprovedProposalCard({
     let amount: number;
     let pct: number | null = null;
     if (costMode === 'amount') {
-      amount = parseFloat(costInput);
-      if (!isFinite(amount) || amount <= 0) {
-        setErr('Enter a valid amount');
+      const parsed = parseShortMoney(costInput);
+      if (parsed === null || !isFinite(parsed) || parsed <= 0) {
+        setErr('Enter a valid amount (e.g. 1000000, 5M, 2.5B, 100T, 5Q)');
         return;
       }
+      amount = parsed;
     } else {
       pct = parseFloat(percentInput);
       if (!isFinite(pct) || pct <= 0 || pct > 100) {
@@ -592,13 +644,39 @@ function ApprovedProposalCard({
             </button>
           </div>
           {costMode === 'amount' ? (
-            <input
-              type="number"
-              value={costInput}
-              onChange={(e) => setCostInput(e.target.value)}
-              placeholder="e.g. 1000000"
-              className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-3 py-2 text-sm"
-            />
+            <div>
+              <input
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
+                value={costInput}
+                onChange={(e) => setCostInput(e.target.value)}
+                placeholder="e.g. 5M, 2.5B, 100T, 5Q, 7Qi…"
+                className="w-full border dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-3 py-2 text-sm"
+              />
+              {(() => {
+                const parsed = parseShortMoney(costInput);
+                if (!costInput.trim()) {
+                  return (
+                    <div className="text-[10px] text-gray-500 mt-1 leading-snug">
+                      Suffixes: K, M, B, T, Q, Qi, Sx, Sp, Oc, No, Dc, Un, Dr, Tr — case-insensitive.
+                    </div>
+                  );
+                }
+                if (parsed === null || parsed <= 0) {
+                  return (
+                    <div className="text-[10px] text-red-500 mt-1">
+                      Can't parse that. Try: 1000000, 5M, 2.5B, 100T, 5Q…
+                    </div>
+                  );
+                }
+                return (
+                  <div className="text-xs text-gray-500 mt-1">
+                    = ${formatMoney(parsed)}
+                  </div>
+                );
+              })()}
+            </div>
           ) : (
             <div>
               <input
@@ -635,12 +713,20 @@ function ApprovedProposalCard({
             <div className="text-xs text-gray-500 italic">
               Waiting on Logan to start the timer...
             </div>
-          ) : hasActive ? (
+          ) : hasActive && scheduledCount >= maxScheduled ? (
             <div className="text-xs text-orange-600 dark:text-orange-400">
-              Another change is already active ({activeTitle}). Wait for it to finish.
+              Queue full ({maxScheduled} max — currently active: {activeTitle}). Wait for one to
+              finish.
             </div>
           ) : (
             <>
+              {hasActive && (
+                <div className="text-[11px] text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-300 dark:border-yellow-700 rounded px-2 py-1">
+                  &ldquo;{activeTitle}&rdquo; is currently active. Setting a timer here will queue
+                  this change as #{queuedCount + 2} of {maxScheduled} — it&apos;ll auto-activate
+                  when the active one ends.
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-[10px] text-gray-500 uppercase">Days</label>
@@ -669,7 +755,7 @@ function ApprovedProposalCard({
                 disabled={busy}
                 className="w-full bg-black hover:bg-gray-800 disabled:bg-gray-400 text-yellow-400 font-bold py-2 rounded text-sm"
               >
-                ⏱ Start Timer &amp; Activate
+                {hasActive ? '➕ Add to Queue' : '⏱ Start Timer & Activate'}
               </button>
             </>
           )}

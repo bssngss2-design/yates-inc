@@ -284,7 +284,18 @@ export default function GameTerminal({ isOpen, onClose, onMine }: GameTerminalPr
         addToHistory(`❌ Failed to ban: ${error.message}`);
         return;
       }
-      
+
+      // Append to the audit log so the Users panel can show "banned before".
+      // Non-fatal if the table doesn't exist yet (run sql/BAN_HISTORY.sql).
+      void supabase.from('ban_history').insert({
+        user_id: targetUserId,
+        user_type: userType,
+        username: username,
+        action: 'ban',
+        by_user_id: userId,
+        reason: reason || null,
+      });
+
       addToHistory(`🔨 BANNED: ${username} (${targetUserId})`);
       addToHistory(`   Type: ${userType}`);
       if (reason) addToHistory(`   Reason: ${reason}`);
@@ -403,12 +414,22 @@ export default function GameTerminal({ isOpen, onClose, onMine }: GameTerminalPr
         addToHistory(`❌ Failed to unban: ${error.message}`);
         return;
       }
-      
+
+      // Audit-log the unban so the Users panel shows "was banned (now unbanned)".
+      // Non-fatal if the table doesn't exist yet (run sql/BAN_HISTORY.sql).
+      void supabase.from('ban_history').insert({
+        user_id: targetUserId,
+        username: foundUsername,
+        action: 'unban',
+        by_user_id: userId,
+        reason: null,
+      });
+
       addToHistory(`✅ UNBANNED: ${foundUsername} (${targetUserId})`);
     } catch (err) {
       addToHistory(`❌ Error: ${err}`);
     }
-  }, [isBanAdmin, addToHistory]);
+  }, [isBanAdmin, addToHistory, userId]);
 
   // List all banned users (only ban admins can see this)
   const listBanned = useCallback(async () => {

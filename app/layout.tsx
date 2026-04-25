@@ -23,6 +23,7 @@ import MotivationPackFloater from "@/components/shop/MotivationPackFloater";
 import CaffeineFloater from "@/components/shop/CaffeineFloater";
 import WalkingBomb from "@/components/shop/WalkingBomb";
 import XpTicker from "@/components/XpTicker";
+import PresenceTracker from "@/components/PresenceTracker";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -63,14 +64,15 @@ export default function RootLayout({
                             <MailProvider>
                             <DisclaimerWarning />
                             <Navbar />
-                            <ActiveChangeBanner />
                             <PaycheckPopup />
                             <PasswordSetupPopup />
                             <MotivationPackFloater />
                             <CaffeineFloater />
                             <WalkingBomb />
                             <XpTicker />
+                            <PresenceTracker />
                             <main className="pt-16 min-h-screen bg-gray-50 dark:bg-gray-900">
+                              <ActiveChangeBanner />
                               {children}
                             </main>
                           </MailProvider>

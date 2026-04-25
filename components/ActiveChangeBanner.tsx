@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import { useTaxVote } from '@/contexts/TaxVoteContext';
 
 function timeLeft(endIso: string): { text: string; endedSoon: boolean } {
@@ -20,15 +21,19 @@ function timeLeft(endIso: string): { text: string; endedSoon: boolean } {
 
 export default function ActiveChangeBanner() {
   const { activeProposal } = useTaxVote();
+  const pathname = usePathname();
   const [, rerender] = useState(0);
 
+  // Banner only lives on the home page. On other routes it's noise.
+  const onHome = pathname === '/';
+
   useEffect(() => {
-    if (!activeProposal) return;
+    if (!activeProposal || !onHome) return;
     const i = setInterval(() => rerender((x) => x + 1), 1000);
     return () => clearInterval(i);
-  }, [activeProposal]);
+  }, [activeProposal, onHome]);
 
-  if (!activeProposal || !activeProposal.timer_end) return null;
+  if (!activeProposal || !activeProposal.timer_end || !onHome) return null;
 
   const { text, endedSoon } = timeLeft(activeProposal.timer_end);
 

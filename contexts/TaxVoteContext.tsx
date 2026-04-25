@@ -17,7 +17,11 @@ export const APPROVER_NAMES: Record<string, string> = {
   '000000': 'Yates',
 };
 
-export type ProposalStatus = 'pending' | 'approved' | 'rejected' | 'active' | 'completed';
+export type ProposalStatus = 'pending' | 'approved' | 'rejected' | 'active' | 'completed' | 'queued';
+
+// Logan can have at most this many proposals scheduled at once
+// (1 active + N-1 queued, or N queued if nothing is active).
+export const MAX_SCHEDULED_PROPOSALS = 3;
 
 export interface ChangeProposal {
   id: string;
@@ -312,21 +316,51 @@ export function TaxVoteProvider({ children }: { children: React.ReactNode }) {
         return { success: false, error: 'Set cost first' };
       }
 
-      // Enforce one active at a time
       const alreadyActive = proposals.find((p) => p.status === 'active');
-      if (alreadyActive && alreadyActive.id !== proposalId) {
-        return { success: false, error: `Another change is already active: ${alreadyActive.title}` };
-      }
+      const queuedCount = proposals.filter((p) => p.status === 'queued').length;
+      const scheduledCount = (alreadyActive ? 1 : 0) + queuedCount;
 
       const now = new Date();
-      const end = new Date(now.getTime() + durationMs);
+
+      // No active proposal -> activate immediately (and any existing queue
+      // already has its head spot reserved for the trigger to promote).
+      if (!alreadyActive) {
+        const end = new Date(now.getTime() + durationMs);
+        const { error } = await supabase
+          .from('change_proposals')
+          .update({
+            status: 'active',
+            timer_set_by: approverId,
+            timer_start: now.toISOString(),
+            timer_end: end.toISOString(),
+            queued_duration_ms: null,
+            queued_at: null,
+            updated_at: now.toISOString(),
+          })
+          .eq('id', proposalId);
+
+        if (error) return { success: false, error: error.message };
+        await fetchProposals();
+        return { success: true };
+      }
+
+      // Something is active -> queue this one (backend only, no UI).
+      if (scheduledCount >= MAX_SCHEDULED_PROPOSALS) {
+        return {
+          success: false,
+          error: `Queue full (${MAX_SCHEDULED_PROPOSALS} max). Wait for one to finish.`,
+        };
+      }
+
       const { error } = await supabase
         .from('change_proposals')
         .update({
-          status: 'active',
+          status: 'queued',
           timer_set_by: approverId,
-          timer_start: now.toISOString(),
-          timer_end: end.toISOString(),
+          queued_duration_ms: Math.round(durationMs),
+          queued_at: now.toISOString(),
+          timer_start: null,
+          timer_end: null,
           updated_at: now.toISOString(),
         })
         .eq('id', proposalId);

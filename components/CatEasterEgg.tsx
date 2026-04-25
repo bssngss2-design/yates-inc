@@ -25,7 +25,7 @@ export default function CatEasterEgg() {
 
     const handleClick = () => {
         setIsVisible(false);
-        router.push('/game');
+        router.push('/info');
     };
 
     if (!isVisible) return null;

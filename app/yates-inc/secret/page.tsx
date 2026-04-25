@@ -201,7 +201,7 @@ export default function SecretChallengePage() {
 
   const closePage = useCallback(() => {
     window.close();
-    router.push('/game');
+    router.push('/info');
   }, [router]);
 
   const grantRewardAndRedirect = useCallback(() => {
@@ -210,7 +210,7 @@ export default function SecretChallengePage() {
     }
     setPhase('redirect');
     setTimeout(() => {
-      router.push(isReplay ? '/game' : '/game?secret=completed');
+      router.push(isReplay ? '/info' : '/info?secret=completed');
     }, 100);
   }, [router, isReplay]);
 

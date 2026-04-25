@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import MiningGame from '@/components/game/MiningGame';
 import { GameProvider } from '@/contexts/GameContext';
 
-export default function GamePage() {
+function GamePageInner() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const [showNoAccountPopup, setShowNoAccountPopup] = useState(false);
@@ -46,5 +46,13 @@ export default function GamePage() {
                 <MiningGame onExit={() => router.push('/info')} />
             </GameProvider>
         </div>
+    );
+}
+
+export default function GamePage() {
+    return (
+        <Suspense fallback={<div className="w-full h-screen bg-black" />}>
+            <GamePageInner />
+        </Suspense>
     );
 }

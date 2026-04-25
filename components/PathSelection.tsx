@@ -19,16 +19,16 @@ export default function PathSelection({ onSelectPath }: PathSelectionProps) {
                 </div>
 
                 {/* Game Buttons */}
-                <div className="flex justify-center gap-4">
+                <div className="flex flex-col sm:flex-row justify-center items-stretch sm:items-center gap-3 sm:gap-4">
                     <button
                         onClick={() => onSelectPath('gameplay')}
-                        className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white px-12 py-4 rounded-xl font-bold text-xl shadow-xl hover:scale-105 active:scale-95 transition-all touch-manipulation"
+                        className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white px-6 sm:px-12 py-3 sm:py-4 rounded-xl font-bold text-lg sm:text-xl shadow-xl hover:scale-105 active:scale-95 transition-all touch-manipulation whitespace-nowrap"
                     >
                         🎮 PLAY GAME
                     </button>
                     <button
                         onClick={() => onSelectPath('hard')}
-                        className="bg-gradient-to-r from-red-700 to-red-900 hover:from-red-600 hover:to-red-800 text-white px-12 py-4 rounded-xl font-bold text-xl shadow-xl hover:scale-105 active:scale-95 transition-all touch-manipulation"
+                        className="bg-gradient-to-r from-red-700 to-red-900 hover:from-red-600 hover:to-red-800 text-white px-6 sm:px-12 py-3 sm:py-4 rounded-xl font-bold text-lg sm:text-xl shadow-xl hover:scale-105 active:scale-95 transition-all touch-manipulation whitespace-nowrap"
                     >
                         💀 HARD MODE
                     </button>

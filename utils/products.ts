@@ -92,6 +92,15 @@ export const products: Product[] = [
     image: '/products/door.png',
     hasAddToCart: true,
   },
+  {
+    id: 11,
+    name: 'Pro skate',
+    price: '$125.00',
+    priceFloat: 125.00,
+    hoverText: 'per time you fall off it',
+    image: '/products/proskate.png',
+    hasAddToCart: true,
+  },
 ];
 
 export const employees = [

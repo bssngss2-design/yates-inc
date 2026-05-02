@@ -27,6 +27,12 @@ export default function PathSelection({ onSelectPath }: PathSelectionProps) {
                         🎮 PLAY GAME
                     </button>
                     <button
+                        onClick={() => router.push('/bosses')}
+                        className="bg-gradient-to-r from-yellow-600 via-amber-500 to-yellow-700 hover:from-yellow-500 hover:via-amber-400 hover:to-yellow-600 text-white px-6 sm:px-12 py-3 sm:py-4 rounded-xl font-bold text-lg sm:text-xl shadow-xl shadow-amber-500/30 hover:scale-105 active:scale-95 transition-all touch-manipulation whitespace-nowrap"
+                    >
+                        🛡️ BOSSES
+                    </button>
+                    <button
                         onClick={() => onSelectPath('hard')}
                         className="bg-gradient-to-r from-red-700 to-red-900 hover:from-red-600 hover:to-red-800 text-white px-6 sm:px-12 py-3 sm:py-4 rounded-xl font-bold text-lg sm:text-xl shadow-xl hover:scale-105 active:scale-95 transition-all touch-manipulation whitespace-nowrap"
                     >

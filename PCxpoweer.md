@@ -40,14 +40,14 @@ Laser: [35k], [335k], [x], [3.7%]
 
 Nightmare: [50k], [800k], [Stun the boss for 3 seconds every time you get 5 block close to him. No stacks. 6 secons cooldown], [4%]
 
-Sun: [10k], [5M], [Long range weapon, you shoot a Sun laser beam that does 10k/s and if not interrupted keeps increasing Compound increasing every 2seconds, by 5k. Can go as high as possible], [6.7%]
+Sun: [10k], [5M], ["H" to shoot. Long range weapon, you shoot a Sun laser beam that does 10k/s and if not interrupted keeps increasing Compound increasing every 2seconds, by 5k. Can go as high as possible], [6.7%]
 
 
 Light Saber: [100k], [1.5M], [x], [4.5]
 
 Plasma: [120k], [4.5M], [If hit the boss twice in  a row, do 500k dmg instantly], [5%]
 
-Galaxy: [180k], [10M], [Throw a black hole for 600k dmg, 5sec coooldown], [5.5%]
+Galaxy: [180k], [10M], ["B"key. Throw a black hole for 600k dmg, 5sec coooldown], [5.5%]
 
 Yates: [500k], [50M], [Every 2 hits, do a crit for 1M dmg], [6.5%]
 

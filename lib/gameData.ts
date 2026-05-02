@@ -528,6 +528,15 @@ export const ROCKS: Rock[] = [
     moneyPerClick: 1200000,
     unlockAtClicks: 35000000,
   },
+  {
+    id: 30,
+    name: 'Interdimensional',
+    image: '/game/rocks/interdimensionalrock.png',
+    clicksToBreak: 700_000_000_000,
+    moneyPerBreak: 5_000_000_000_000,
+    moneyPerClick: 50_000_000_000,
+    unlockAtClicks: 100_000_000_000,
+  },
 ];
 
 export const getPickaxeById = (id: number): Pickaxe | undefined => {

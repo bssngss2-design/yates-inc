@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '@/contexts/GameContext';
+import { getPickaxeById } from '@/lib/gameData';
+import { MINER_BASE_DAMAGE, HARD_MODE_MODIFIERS, PROGRESSIVE_UPGRADES, getProgressiveUpgradeBonus } from '@/types/game';
 
 interface GameSettingsProps {
   isOpen: boolean;
@@ -12,6 +14,8 @@ interface GameSettingsProps {
 export default function GameSettings({ isOpen, onClose }: GameSettingsProps) {
   const {
     gameState,
+    currentPickaxe,
+    getTotalBonuses,
     toggleAutoclicker,
     saveNow,
   } = useGame();
@@ -29,6 +33,80 @@ export default function GameSettings({ isOpen, onClose }: GameSettingsProps) {
     setSaveStatus(ok ? 'saved' : 'failed');
     setTimeout(() => setSaveStatus('idle'), 2000);
   }, [saveNow]);
+
+  const { dmgPerClick, dmgPerSecond } = useMemo(() => {
+    const bonuses = getTotalBonuses();
+
+    // Progressive upgrade bonuses (not included in getTotalBonuses)
+    const progUpgrades = gameState.progressiveUpgrades;
+    const getProgBonus = (id: string) => {
+      const u = PROGRESSIVE_UPGRADES.find(p => p.id === id);
+      return u ? getProgressiveUpgradeBonus(u, progUpgrades[id as keyof typeof progUpgrades] || 0) : 0;
+    };
+    const progPcxDmg = getProgBonus('pcxDamage');
+    const progGeneralSpeed = getProgBonus('generalSpeed');
+    const progMinerSpeed = getProgBonus('minerSpeed');
+    const progMinerDamage = getProgBonus('minerDamage');
+
+    // Active ability bonuses (damage_boost / all_boost / miner_speed)
+    let abilityDmgMult = 1;
+    let abilityAllBonus = 0;
+    let abilityMinerSpeedBonus = 0;
+    if (gameState.activeAbility) {
+      const { startTime, duration, pickaxeId } = gameState.activeAbility;
+      if (duration > 0 && Date.now() < startTime + duration) {
+        const abPcx = getPickaxeById(pickaxeId);
+        const eff = abPcx?.activeAbility?.effect;
+        if (eff?.type === 'damage_boost') abilityDmgMult = eff.value;
+        if (eff?.type === 'all_boost') abilityAllBonus = eff.value;
+        if (eff?.type === 'miner_speed') abilityMinerSpeedBonus = eff.value;
+      }
+    }
+
+    // Wizard ritual separate 3x multiplier (bonuses already include ritual in their values)
+    let wizRitualMult = 1;
+    if (gameState.buildings.wizard_tower.ritualActive &&
+        gameState.buildings.wizard_tower.ritualEndTime &&
+        Date.now() < gameState.buildings.wizard_tower.ritualEndTime) {
+      wizRitualMult = 3.0;
+    }
+
+    // Factory active buff multipliers
+    let factDmgMult = 1;
+    let factSpdMult = 1;
+    const now = Date.now();
+    for (const b of gameState.activeBuffs) {
+      if (b.startTime + b.duration > now) {
+        if (b.type === 'damage') factDmgMult += b.multiplier;
+        if (b.type === 'clickSpeed') factSpdMult += b.multiplier;
+      }
+    }
+
+    // --- Dmg per click (mirrors mineRock formula + progressive upgrades) ---
+    let click = currentPickaxe.clickPower;
+    click = Math.ceil(
+      click
+      * (1 + bonuses.rockDamageBonus + progPcxDmg + abilityAllBonus)
+      * abilityDmgMult
+      * (1 + bonuses.clickSpeedBonus + progGeneralSpeed)
+      * wizRitualMult
+      * factDmgMult
+      * factSpdMult
+    );
+    if (gameState.isHardMode) click = Math.ceil(click * HARD_MODE_MODIFIERS.pickaxeDamageMultiplier);
+    click = Math.max(1, click);
+
+    // --- Dmg per second (miners + factory bonus miners + mines + shadow miners) ---
+    const totalMinerBonus = bonuses.minerDamageBonus + bonuses.minerSpeedBonus
+      + progMinerDamage + progMinerSpeed
+      + abilityMinerSpeedBonus + abilityAllBonus;
+    const effectiveMiners = gameState.minerCount + (gameState.buildings.factory.bonusMiners || 0);
+    const minerDps = Math.ceil(effectiveMiners * MINER_BASE_DAMAGE * (1 + totalMinerBonus));
+    const mineDps = Math.ceil(gameState.buildings.mine.count * 20 * MINER_BASE_DAMAGE * (1 + totalMinerBonus));
+    const shadowDps = (gameState.buildings.wizard_tower.shadowMiners || 0) * 1000;
+
+    return { dmgPerClick: click, dmgPerSecond: minerDps + mineDps + shadowDps };
+  }, [gameState, currentPickaxe, getTotalBonuses]);
 
   if (!mounted || !isOpen) return null;
 
@@ -145,6 +223,15 @@ export default function GameSettings({ isOpen, onClose }: GameSettingsProps) {
               <div className="flex justify-between text-xs">
                 <span className="text-gray-400">Miners</span>
                 <span className="text-white font-medium">{gameState.minerCount}</span>
+              </div>
+              <div className="border-t border-gray-700/30 my-1.5" />
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-400">Current Dmg/Click</span>
+                <span className="text-amber-400 font-medium">{dmgPerClick.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-400">Current Dmg/Second</span>
+                <span className="text-cyan-400 font-medium">{dmgPerSecond.toLocaleString()}</span>
               </div>
             </div>
           </div>

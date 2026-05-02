@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 // The 5 approvers: Logan, Bernardo, Harris, Wyatt, Suhas
 export const APPROVER_IDS = ['000001', '123456', '674121', '319736', '010101'] as const;
 export const LOGAN_ID = '000001';
+export const BERNARDO_ID = '123456';
 export const APPROVER_NAMES: Record<string, string> = {
   '000001': 'Logan',
   '123456': 'Bernardo',
@@ -69,6 +70,7 @@ interface TaxVoteContextType {
   voteOnProposal: (proposalId: string, approverId: string, vote: 'yes' | 'no') => Promise<{ success: boolean; error?: string }>;
   setProposalCost: (proposalId: string, approverId: string, costAmount: number, costPercentage?: number | null) => Promise<{ success: boolean; error?: string }>;
   setProposalTimer: (proposalId: string, approverId: string, durationMs: number) => Promise<{ success: boolean; error?: string }>;
+  deleteProposal: (proposalId: string, requesterId: string) => Promise<{ success: boolean; error?: string }>;
   refresh: () => Promise<void>;
 }
 
@@ -372,6 +374,45 @@ export function TaxVoteProvider({ children }: { children: React.ReactNode }) {
     [proposals, fetchProposals],
   );
 
+  // Bernardo-only purge. Refunds the pool for any cost already deducted on
+  // proposals that were never spent (i.e. anything but 'completed').
+  const deleteProposal: TaxVoteContextType['deleteProposal'] = useCallback(
+    async (proposalId, requesterId) => {
+      if (requesterId !== BERNARDO_ID) {
+        return { success: false, error: 'Only Bernardo can delete proposals' };
+      }
+      const proposal = proposals.find((p) => p.id === proposalId);
+      if (!proposal) return { success: false, error: 'Proposal not found' };
+
+      const shouldRefund =
+        proposal.cost_amount !== null &&
+        proposal.cost_amount > 0 &&
+        proposal.status !== 'completed';
+
+      if (shouldRefund) {
+        try {
+          await supabase.rpc('add_to_tax_pool', {
+            p_amount: proposal.cost_amount,
+            p_source: 'wealth_tax',
+            p_description: `Refund: deleted proposal "${proposal.title}"`,
+          });
+        } catch (e) {
+          console.warn('[TaxVote] refund failed (continuing with delete):', e);
+        }
+      }
+
+      const { error } = await supabase
+        .from('change_proposals')
+        .delete()
+        .eq('id', proposalId);
+      if (error) return { success: false, error: error.message };
+
+      await Promise.all([fetchPool(), fetchProposals()]);
+      return { success: true };
+    },
+    [proposals, fetchPool, fetchProposals],
+  );
+
   return (
     <TaxVoteContext.Provider
       value={{
@@ -384,6 +425,7 @@ export function TaxVoteProvider({ children }: { children: React.ReactNode }) {
         voteOnProposal,
         setProposalCost,
         setProposalTimer,
+        deleteProposal,
         refresh,
       }}
     >

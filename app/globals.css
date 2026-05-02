@@ -220,3 +220,67 @@ body::before {
 .animate-building-glow {
   animation: building-glow 1.5s ease-in-out infinite;
 }
+
+/* ExqUiZxyte rainbow border animation */
+@keyframes rainbow-border {
+  0%   { border-color: #ff0000; }
+  14%  { border-color: #ff8800; }
+  28%  { border-color: #ffff00; }
+  42%  { border-color: #00ff00; }
+  57%  { border-color: #0088ff; }
+  71%  { border-color: #8800ff; }
+  85%  { border-color: #ff00ff; }
+  100% { border-color: #ff0000; }
+}
+
+@keyframes rainbow-glow {
+  0%   { box-shadow: 0 0 12px #ff000080; }
+  14%  { box-shadow: 0 0 12px #ff880080; }
+  28%  { box-shadow: 0 0 12px #ffff0080; }
+  42%  { box-shadow: 0 0 12px #00ff0080; }
+  57%  { box-shadow: 0 0 12px #0088ff80; }
+  71%  { box-shadow: 0 0 12px #8800ff80; }
+  85%  { box-shadow: 0 0 12px #ff00ff80; }
+  100% { box-shadow: 0 0 12px #ff000080; }
+}
+
+@keyframes rainbow-text {
+  0%   { color: #ff4444; }
+  14%  { color: #ff8844; }
+  28%  { color: #ffff44; }
+  42%  { color: #44ff44; }
+  57%  { color: #4488ff; }
+  71%  { color: #8844ff; }
+  85%  { color: #ff44ff; }
+  100% { color: #ff4444; }
+}
+
+.exquizxyte-border {
+  animation: rainbow-border 3s linear infinite, rainbow-glow 3s linear infinite;
+  border-width: 2px;
+  border-style: solid;
+}
+
+.exquizxyte-text {
+  animation: rainbow-text 3s linear infinite;
+}
+
+/* Dual rarity: left half = base rarity color (set via border-color), right half = rainbow */
+.dual-rarity-border {
+  border-width: 2px;
+  border-style: solid;
+  border-image: none;
+  animation: rainbow-border 3s linear infinite, rainbow-glow 3s linear infinite;
+  border-left-color: var(--dual-rarity-base);
+  border-top-color: var(--dual-rarity-base);
+}
+
+/* Transformation cooldown wind-up circle */
+@keyframes cooldown-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.cooldown-ring {
+  animation: cooldown-spin 1.5s linear infinite;
+}

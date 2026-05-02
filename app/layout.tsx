@@ -13,6 +13,7 @@ import { TaxVoteProvider } from "@/contexts/TaxVoteContext";
 import { EmployeeShopProvider } from "@/contexts/EmployeeShopContext";
 import { AdminProvider } from "@/contexts/AdminContext";
 import { TierProvider } from "@/contexts/TierContext";
+import { BossProvider } from "@/contexts/BossContext";
 import Navbar from "@/components/Navbar";
 import DisclaimerWarning from "@/components/DisclaimerWarning";
 import PaycheckPopup from "@/components/PaycheckPopup";
@@ -54,6 +55,7 @@ export default function RootLayout({
           <AuthProvider>
             <ClientProvider>
               <GameProvider>
+                <BossProvider>
                 <BudgetProvider>
                   <PaycheckProvider>
                     <TaxVoteProvider>
@@ -83,6 +85,7 @@ export default function RootLayout({
                     </TaxVoteProvider>
                   </PaycheckProvider>
                 </BudgetProvider>
+                </BossProvider>
               </GameProvider>
             </ClientProvider>
           </AuthProvider>

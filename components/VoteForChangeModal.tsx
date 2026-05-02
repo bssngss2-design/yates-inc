@@ -8,6 +8,7 @@ import {
   APPROVER_IDS,
   APPROVER_NAMES,
   LOGAN_ID,
+  BERNARDO_ID,
   MAX_SCHEDULED_PROPOSALS,
   type ChangeProposal,
 } from '@/contexts/TaxVoteContext';
@@ -101,6 +102,7 @@ export default function VoteForChangeModal({ isOpen, onClose, initialTab }: Vote
     voteOnProposal,
     setProposalCost,
     setProposalTimer,
+    deleteProposal,
   } = useTaxVote();
 
   const [tab, setTab] = useState<Tab>(initialTab ?? 'active');
@@ -127,6 +129,7 @@ export default function VoteForChangeModal({ isOpen, onClose, initialTab }: Vote
   const currentUserType: 'employee' | 'client' = employee ? 'employee' : 'client';
   const isApprover = employee ? APPROVER_IDS.includes(employee.id as any) : false;
   const isLogan = employee?.id === LOGAN_ID;
+  const isBernardo = employee?.id === BERNARDO_ID;
 
   const pending = useMemo(() => proposals.filter((p) => p.status === 'pending'), [proposals]);
   const approved = useMemo(() => proposals.filter((p) => p.status === 'approved'), [proposals]);
@@ -255,6 +258,8 @@ export default function VoteForChangeModal({ isOpen, onClose, initialTab }: Vote
                         isApprover={isApprover}
                         approverId={employee?.id}
                         onVote={voteOnProposal}
+                        isBernardo={isBernardo}
+                        onDelete={deleteProposal}
                       />
                     ))}
                   </div>
@@ -286,6 +291,8 @@ export default function VoteForChangeModal({ isOpen, onClose, initialTab }: Vote
                         maxScheduled={MAX_SCHEDULED_PROPOSALS}
                         onSetCost={setProposalCost}
                         onSetTimer={setProposalTimer}
+                        isBernardo={isBernardo}
+                        onDelete={deleteProposal}
                       />
                     ))}
                   </div>
@@ -366,7 +373,15 @@ export default function VoteForChangeModal({ isOpen, onClose, initialTab }: Vote
                   No history yet.
                 </div>
               ) : (
-                history.map((p) => <HistoryCard key={p.id} p={p} />)
+                history.map((p) => (
+                  <HistoryCard
+                    key={p.id}
+                    p={p}
+                    isBernardo={isBernardo}
+                    bernardoId={employee?.id}
+                    onDelete={deleteProposal}
+                  />
+                ))
               )}
             </div>
           )}
@@ -422,11 +437,15 @@ function ProposalCard({
   isApprover,
   approverId,
   onVote,
+  isBernardo,
+  onDelete,
 }: {
   p: ChangeProposal;
   isApprover: boolean;
   approverId?: string;
   onVote: (id: string, approverId: string, vote: 'yes' | 'no') => Promise<{ success: boolean; error?: string }>;
+  isBernardo: boolean;
+  onDelete: (id: string, requesterId: string) => Promise<{ success: boolean; error?: string }>;
 }) {
   const [voting, setVoting] = useState<'yes' | 'no' | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -508,6 +527,14 @@ function ProposalCard({
           You already voted on this one.
         </div>
       )}
+      {isBernardo && approverId && (
+        <BernardoDeleteRow
+          proposal={p}
+          requesterId={approverId}
+          onDelete={onDelete}
+          onError={setErr}
+        />
+      )}
       {err && <div className="mt-2 text-xs text-red-500">{err}</div>}
     </div>
   );
@@ -526,6 +553,8 @@ function ApprovedProposalCard({
   maxScheduled,
   onSetCost,
   onSetTimer,
+  isBernardo,
+  onDelete,
 }: {
   p: ChangeProposal;
   isApprover: boolean;
@@ -539,6 +568,8 @@ function ApprovedProposalCard({
   maxScheduled: number;
   onSetCost: (id: string, approverId: string, cost: number, pct?: number | null) => Promise<{ success: boolean; error?: string }>;
   onSetTimer: (id: string, approverId: string, durationMs: number) => Promise<{ success: boolean; error?: string }>;
+  isBernardo: boolean;
+  onDelete: (id: string, requesterId: string) => Promise<{ success: boolean; error?: string }>;
 }) {
   const [costMode, setCostMode] = useState<'amount' | 'percent'>('amount');
   const [costInput, setCostInput] = useState('');
@@ -762,12 +793,31 @@ function ApprovedProposalCard({
         </div>
       )}
 
+      {isBernardo && approverId && (
+        <BernardoDeleteRow
+          proposal={p}
+          requesterId={approverId}
+          onDelete={onDelete}
+          onError={setErr}
+        />
+      )}
       {err && <div className="mt-2 text-xs text-red-500">{err}</div>}
     </div>
   );
 }
 
-function HistoryCard({ p }: { p: ChangeProposal }) {
+function HistoryCard({
+  p,
+  isBernardo,
+  bernardoId,
+  onDelete,
+}: {
+  p: ChangeProposal;
+  isBernardo: boolean;
+  bernardoId?: string;
+  onDelete: (id: string, requesterId: string) => Promise<{ success: boolean; error?: string }>;
+}) {
+  const [err, setErr] = useState<string | null>(null);
   const isRejected = p.status === 'rejected';
   return (
     <div
@@ -796,6 +846,88 @@ function HistoryCard({ p }: { p: ChangeProposal }) {
         >
           {isRejected ? '❌ Rejected' : '✓ Completed'}
         </span>
+      </div>
+      {isBernardo && bernardoId && (
+        <BernardoDeleteRow
+          proposal={p}
+          requesterId={bernardoId}
+          onDelete={onDelete}
+          onError={setErr}
+        />
+      )}
+      {err && <div className="mt-2 text-xs text-red-500">{err}</div>}
+    </div>
+  );
+}
+
+function BernardoDeleteRow({
+  proposal,
+  requesterId,
+  onDelete,
+  onError,
+}: {
+  proposal: ChangeProposal;
+  requesterId: string;
+  onDelete: (id: string, requesterId: string) => Promise<{ success: boolean; error?: string }>;
+  onError: (msg: string | null) => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const willRefund =
+    proposal.cost_amount !== null &&
+    proposal.cost_amount > 0 &&
+    proposal.status !== 'completed';
+
+  const handleClick = async () => {
+    if (!confirming) {
+      setConfirming(true);
+      onError(null);
+      return;
+    }
+    setBusy(true);
+    onError(null);
+    const res = await onDelete(proposal.id, requesterId);
+    setBusy(false);
+    if (!res.success) {
+      onError(res.error || 'Delete failed');
+      setConfirming(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 pt-3 border-t border-dashed border-red-300 dark:border-red-900/50 flex items-center justify-between gap-2">
+      <div className="text-[10px] uppercase tracking-wider text-red-600 dark:text-red-400 font-bold">
+        Bernardo only
+        {willRefund && (
+          <span className="ml-1 normal-case font-normal text-gray-500 dark:text-gray-400">
+            · refunds ${formatMoney(proposal.cost_amount!)} to the pool
+          </span>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        {confirming && !busy && (
+          <button
+            onClick={() => {
+              setConfirming(false);
+              onError(null);
+            }}
+            className="text-xs px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200"
+          >
+            Cancel
+          </button>
+        )}
+        <button
+          onClick={handleClick}
+          disabled={busy}
+          className={`text-xs font-bold px-3 py-1 rounded transition-colors ${
+            confirming
+              ? 'bg-red-700 hover:bg-red-800 text-white'
+              : 'bg-red-500/90 hover:bg-red-600 text-white'
+          } disabled:bg-gray-400`}
+        >
+          {busy ? 'Deleting...' : confirming ? 'Confirm delete' : '🗑 Delete'}
+        </button>
       </div>
     </div>
   );

@@ -1650,6 +1650,19 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     return () => clearInterval(interval);
   }, [gameState.autoPrestigeEnabled, userId]);
 
+  // Force save whenever prestige count changes (covers auto-prestige which
+  // previously never wrote to Supabase, causing stale DB data)
+  const prevPrestigeCountRef = useRef(gameState.prestigeCount);
+  useEffect(() => {
+    if (!userId || !userType || isLoadingRef.current) return;
+    if (gameState.prestigeCount !== prevPrestigeCountRef.current) {
+      prevPrestigeCountRef.current = gameState.prestigeCount;
+      console.log('⚡ PRESTIGE CHANGE DETECTED: Force saving prestige', gameState.prestigeCount);
+      const payload = buildSavePayload(gameState, userId, userType);
+      forceImmediateSave(payload);
+    }
+  }, [gameState.prestigeCount, userId, userType]);
+
   // Stock market unlock tracking - permanently unlock when requirements first met
   useEffect(() => {
     // Skip if already unlocked
@@ -1930,110 +1943,31 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     };
   }, [isLoaded, userId, gameState, shopStock]);
 
-  // Save to Supabase whenever state changes (debounced by userDataSync)
+  // Save to Supabase on a polling interval. Reads from unloadGameStateRef at
+  // save time so the payload is always the absolute latest committed state,
+  // not a stale closure snapshot from a previous render.
   useEffect(() => {
-    // Don't save during initial load - wait until data is loaded
-    if (!isLoaded || isLoadingRef.current) {
-      return;
-    }
-    
-    try {
-      // CRITICAL: Skip save if core numeric fields are corrupt (NaN/Infinity/null)
-      if (isCorruptNumber(gameState.yatesDollars) || isCorruptNumber(gameState.totalClicks) || isCorruptNumber(gameState.totalMoneyEarned)) {
+    if (!userId || !userType) return;
+
+    const pollId = setInterval(() => {
+      if (!isLoaded || isLoadingRef.current) return;
+
+      const current = unloadGameStateRef.current;
+
+      if (isCorruptNumber(current.yatesDollars) || isCorruptNumber(current.totalClicks) || isCorruptNumber(current.totalMoneyEarned)) {
         console.error('🚨 SUPABASE SAVE BLOCKED: Corrupt game state detected!', {
-          yatesDollars: gameState.yatesDollars,
-          totalClicks: gameState.totalClicks,
-          totalMoneyEarned: gameState.totalMoneyEarned,
+          yatesDollars: current.yatesDollars,
+          totalClicks: current.totalClicks,
+          totalMoneyEarned: current.totalMoneyEarned,
         });
         return;
       }
 
-      // If logged in, also sync to Supabase (debounced)
-      // The debounce system has a cooldown after forceImmediateSave to prevent
-      // stale data from overwriting prestige resets.
-      if (userId && userType) {
-        debouncedSaveUserGameData({
-          user_id: userId,
-          user_type: userType,
-          // Core game state
-          yates_dollars: gameState.yatesDollars,
-          total_clicks: gameState.totalClicks,
-          current_pickaxe_id: gameState.currentPickaxeId,
-          current_rock_id: gameState.currentRockId,
-          current_rock_hp: gameState.currentRockHP,
-          rocks_mined_count: gameState.rocksMinedCount,
-          owned_pickaxe_ids: gameState.ownedPickaxeIds,
-          // Coupons
-          coupons_30: gameState.coupons.discount30,
-          coupons_50: gameState.coupons.discount50,
-          coupons_100: gameState.coupons.discount100,
-          // Game settings
-          has_seen_cutscene: gameState.hasSeenCutscene,
-          has_autoclicker: gameState.hasAutoclicker,
-          autoclicker_enabled: gameState.autoclickerEnabled,
-          // Anti-cheat fields
-          anti_cheat_warnings: gameState.antiCheatWarnings,
-          is_on_watchlist: gameState.isOnWatchlist,
-          is_blocked: gameState.isBlocked,
-          appeal_pending: gameState.appealPending,
-          // Trinkets
-          owned_trinket_ids: gameState.ownedTrinketIds,
-          equipped_trinket_ids: gameState.equippedTrinketIds,
-          trinket_shop_items: gameState.trinketShopItems,
-          trinket_shop_last_refresh: gameState.trinketShopLastRefresh,
-          has_totem_protection: gameState.hasTotemProtection,
-          has_stocks_unlocked: gameState.hasStocksUnlocked,
-          // Relics & Talismans
-          owned_relic_ids: gameState.ownedRelicIds,
-          owned_talisman_ids: gameState.ownedTalismanIds,
-          // Miners
-          miner_count: gameState.minerCount,
-          miner_last_tick: gameState.minerLastTick,
-          // Prestige
-          prestige_count: gameState.prestigeCount,
-          prestige_multiplier: gameState.prestigeMultiplier,
-          prestige_tokens: gameState.prestigeTokens,
-          owned_prestige_upgrade_ids: gameState.ownedPrestigeUpgradeIds,
-          auto_prestige_enabled: gameState.autoPrestigeEnabled,
-          // Achievements
-          unlocked_achievement_ids: gameState.unlockedAchievementIds,
-          // Ranking system
-          total_money_earned: gameState.totalMoneyEarned,
-          game_start_time: gameState.gameStartTime,
-          fastest_prestige_time: gameState.fastestPrestigeTime,
-          // Pro Player Titles
-          owned_title_ids: gameState.ownedTitleIds,
-          equipped_title_ids: gameState.equippedTitleIds,
-          title_win_counts: gameState.titleWinCounts,
-          // Path system
-          chosen_path: gameState.chosenPath,
-          side_level: gameState.sideLevel,
-          side_level_buffs: JSON.stringify(gameState.sideLevelBuffs),
-          total_golden_cookies_collected: gameState.totalGoldenCookiesCollected,
-          total_miners_sacrificed: gameState.totalMinersSacrificed,
-          // Tax system
-          last_tax_time: gameState.lastTaxTime,
-          // Loans
-          loan_amount: gameState.loanAmount,
-          loan_taken_at: gameState.loanTakenAt,
-          loan_last_accrual_at: gameState.loanLastAccrualAt,
-          // Playtime tracking
-          total_playtime_seconds: gameState.totalPlaytimeSeconds,
-          // Premium products - only if has items
-          ...(gameState.ownedPremiumProductIds?.length ? { owned_premium_product_ids: gameState.ownedPremiumProductIds } : {}),
-          // Buildings data (bank, factory, temple, etc.) - serialized as JSON
-          buildings_data: JSON.stringify(gameState.buildings),
-          // Stokens & Lottery Tickets
-          stokens: gameState.stokens,
-          lottery_tickets: gameState.lotteryTickets,
-          // Shady Sam
-          shady_sam_swaps: JSON.stringify(gameState.shadySamSwaps),
-        }, gameState.isHardMode);
-      }
-    } catch (err) {
-      console.error('❌ Error saving game data:', err);
-    }
-  }, [gameState, shopStock, isLoaded, userId, userType]);
+      debouncedSaveUserGameData(buildSavePayload(current, userId, userType), current.isHardMode);
+    }, 2000);
+
+    return () => clearInterval(pollId);
+  }, [userId, userType, isLoaded]);
 
   // Build the full save payload from a GameState snapshot — single source
   // of truth used by both keepalive handlers so no fields are ever missed.
@@ -2099,15 +2033,23 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
   const saveNow = useCallback(async (): Promise<boolean> => {
     if (!userId || !userType) return false;
     try {
-      const payload = buildSavePayload(gameState, userId, userType);
+      const current = unloadGameStateRef.current;
+      console.log('💾 SAVE NOW: Manual save triggered', {
+        prestige: current.prestigeCount,
+        clicks: current.totalClicks,
+        dollars: current.yatesDollars,
+      });
+      const payload = buildSavePayload(current, userId, userType);
       const result = await forceImmediateSave(payload);
-      const storageKey = getStorageKey(userId, gameState.isHardMode);
-      localStorage.setItem(storageKey, JSON.stringify({ ...gameState, localUpdatedAt: Date.now() }));
+      const storageKey = getStorageKey(userId, current.isHardMode);
+      localStorage.setItem(storageKey, JSON.stringify({ ...current, localUpdatedAt: Date.now() }));
+      console.log('💾 SAVE NOW result:', result ? '✅ SUCCESS' : '❌ FAILED');
       return result;
-    } catch {
+    } catch (err) {
+      console.error('💾 SAVE NOW exception:', err);
       return false;
     }
-  }, [gameState, userId, userType]);
+  }, [userId, userType]);
 
   // Save immediately when page is about to unload or tab is hidden
   useEffect(() => {
@@ -2998,6 +2940,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     // This prevents the merge logic from restoring old pre-prestige data on refresh
     if (userId && userType) {
       const rock = ROCKS[0];
+      const scaledHP = getScaledRockHP(rock.clicksToBreak, newPrestigeCount, gameState.isHardMode, gameState.sideLevel || 0);
       forceImmediateSave({
         user_id: userId,
         user_type: userType,
@@ -3005,8 +2948,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         total_clicks: 0,
         current_pickaxe_id: 1,
         current_rock_id: 1,
-        current_rock_hp: rock.clicksToBreak,
-        rocks_mined_count: 0,
+        current_rock_hp: scaledHP,
         owned_pickaxe_ids: [1],
         miner_count: 0,
         prestige_count: newPrestigeCount,

@@ -6,7 +6,7 @@ import { useGame } from '@/contexts/GameContext';
 import { useBudget } from '@/contexts/BudgetContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useClient } from '@/contexts/ClientContext';
-import { PRESTIGE_REQUIREMENTS, getPrestigeRockRequirement, getPrestigePickaxeRequirement } from '@/types/game';
+import { getPrestigeRockRequirement, getPrestigePickaxeRequirement } from '@/types/game';
 import { ROCKS, PICKAXES } from '@/lib/gameData';
 
 export default function PrestigeButton() {
@@ -65,11 +65,23 @@ export default function PrestigeButton() {
 
   const handlePrestige = async () => {
     setIsPrestiging(true);
-    
+
+    // Calculate HC that will be earned BEFORE prestiging (for display)
+    const nextPrestigeCount = gameState.prestigeCount + 1;
+    let hcPreview = 0;
+    if (nextPrestigeCount >= 10) {
+      if (nextPrestigeCount === 10) {
+        hcPreview = 1;
+      } else {
+        const hcFromGems = Math.floor((gameState.gems || 0) / 25);
+        const hcFromMoney = Math.floor(gameState.yatesDollars / 1_000_000_000_000);
+        hcPreview = hcFromGems + hcFromMoney;
+      }
+    }
+
     const result = prestige();
     
     if (result && result.amountToCompany > 0) {
-      // Add contribution to active budget (money in circulation)
       await addToActiveBudget(
         result.amountToCompany,
         `Prestige contribution from ${playerName}`,
@@ -79,6 +91,14 @@ export default function PrestigeButton() {
     
     setIsPrestiging(false);
     setShowConfirm(false);
+
+    if (nextPrestigeCount >= 10) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('yates-open-ascension-tree', { detail: { hcEarned: hcPreview } })
+        );
+      }
+    }
   };
 
   // Modal content - rendered via portal to escape stacking context
@@ -128,6 +148,20 @@ export default function PrestigeButton() {
           </div>
         </div>
 
+        {gameState.prestigeCount + 1 >= 10 && (
+          <div className="bg-yellow-900/20 border border-yellow-600/30 rounded-lg p-3 mb-4">
+            <div className="text-center text-yellow-400 font-bold text-sm mb-1">Heavenly Chips Preview</div>
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-400">From Gems ({gameState.gems || 0}):</span>
+              <span className="text-yellow-300">+{gameState.prestigeCount + 1 === 10 ? 0 : Math.floor((gameState.gems || 0) / 25)} HC</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-400">From Money:</span>
+              <span className="text-yellow-300">+{gameState.prestigeCount + 1 === 10 ? 1 : Math.floor(gameState.yatesDollars / 1e12)} HC</span>
+            </div>
+            <div className="text-center text-yellow-400 text-xs mt-1">The Ascension Tree will open after prestige!</div>
+          </div>
+        )}
         <div className="text-xs text-gray-400 mb-4 text-center">
           <p>✅ Keeps: Coupons, Autoclicker, Cutscene</p>
           <p>❌ Resets: Rocks, Pickaxes, Clicks, Money</p>

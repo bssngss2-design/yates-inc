@@ -5,8 +5,9 @@ import Image from 'next/image';
 import { useGame } from '@/contexts/GameContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { PICKAXES, getNextRockUnlockInfo } from '@/lib/gameData';
-import { AUTOCLICKER_COST, AUTOCLICKER_CPS, getPrestigePriceMultiplier, YATES_PICKAXE_ID, DARKNESS_PICKAXE_IDS, LIGHT_PICKAXE_IDS, GamePath } from '@/types/game';
+import { AUTOCLICKER_COST, AUTOCLICKER_CPS, getPrestigePriceMultiplier, YATES_PICKAXE_ID, DARKNESS_PICKAXE_IDS, LIGHT_PICKAXE_IDS, GamePath, EXOTIC_ROCKS } from '@/types/game';
 import GameShop from './GameShop';
+import ShipmentModal from './ShipmentModal';
 import RockSelector from './RockSelector';
 import GameTerminal from './GameTerminal';
 import PrestigeButton from './PrestigeButton';
@@ -31,11 +32,28 @@ import WizardTowerSidebar from './WizardTowerSidebar';
 import BankModal from './BankModal';
 import ShadySamModal from './ShadySamModal';
 import SideLevelPanel from './SideLevelPanel';
+import AscensionTree from './AscensionTree';
 import { MINER_BASE_DAMAGE, getScaledRockHP, BUILDINGS, BuildingType, getMinerCost } from '@/types/game';
 import { ROCKS } from '@/lib/gameData';
 
 interface MiningGameProps {
   onExit?: () => void;
+}
+
+/** Single ascension overlay so mobile + desktop PrestigeButtons and the terminal `prestige` command share one modal. */
+function AscensionTreeHost() {
+  const [open, setOpen] = useState(false);
+  const [hcEarned, setHcEarned] = useState(0);
+  useEffect(() => {
+    const h = (e: Event) => {
+      const ce = e as CustomEvent<{ hcEarned?: number }>;
+      setHcEarned(typeof ce.detail?.hcEarned === 'number' ? ce.detail.hcEarned : 0);
+      setOpen(true);
+    };
+    window.addEventListener('yates-open-ascension-tree', h);
+    return () => window.removeEventListener('yates-open-ascension-tree', h);
+  }, []);
+  return <AscensionTree isOpen={open} onClose={() => setOpen(false)} hcEarned={hcEarned} />;
 }
 
 interface MoneyPopup {
@@ -73,6 +91,7 @@ export default function MiningGame({ onExit }: MiningGameProps) {
     isBanned,
     banReason,
     getTotalBonuses,
+    getBonusBreakdown,
     selectPath,
     buyBuilding,
     canAffordBuilding,
@@ -107,6 +126,8 @@ export default function MiningGame({ onExit }: MiningGameProps) {
   // Stores moved into GameShop as tabs
   const [showShadySam, setShowShadySam] = useState(false);
   const [showSideLevel, setShowSideLevel] = useState(false);
+  const [customMinerAmount, setCustomMinerAmount] = useState('');
+  const [expandedBonusStat, setExpandedBonusStat] = useState<string | null>(null);
   const [confirmingPath, setConfirmingPath] = useState<GamePath>(null);
   const [displayProgress, setDisplayProgress] = useState(0);
   const [rockBroken, setRockBroken] = useState(false);
@@ -333,8 +354,10 @@ export default function MiningGame({ onExit }: MiningGameProps) {
     }
   };
 
-  const scaledRockMaxHP = getScaledRockHP(currentRock.clicksToBreak, gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0);
-  const actualProgress = ((scaledRockMaxHP - gameState.currentRockHP) / scaledRockMaxHP) * 100;
+  const isExoticActive = gameState.exoticRock?.active && gameState.exoticRock?.rockId;
+  const scaledRockMaxHP = isExoticActive ? (gameState.exoticRock?.maxHP || 1) : getScaledRockHP(currentRock.clicksToBreak, gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0);
+  const currentHP = isExoticActive ? (gameState.exoticRock?.currentHP || 0) : gameState.currentRockHP;
+  const actualProgress = ((scaledRockMaxHP - currentHP) / scaledRockMaxHP) * 100;
   const progressPercent = rockBroken ? 100 : (displayProgress || actualProgress);
   const totalCoupons = gameState.coupons.discount30 + gameState.coupons.discount50 + gameState.coupons.discount100;
 
@@ -465,15 +488,6 @@ export default function MiningGame({ onExit }: MiningGameProps) {
   // BUILDING PANEL HELPERS (for desktop right panel)
   // =====================
 
-  // Building data for right panel
-  const availableBuildings = useMemo(() => {
-    return BUILDINGS.filter(building => {
-      if (building.id === 'shipment') return false; // Skip shipment
-      if (building.pathRestriction !== null && building.pathRestriction !== gameState.chosenPath) return false;
-      return true;
-    });
-  }, [gameState.chosenPath]);
-
   const getBuildingCount = (buildingId: string): number => {
     switch (buildingId) {
       case 'mine': return gameState.buildings.mine.count;
@@ -482,9 +496,46 @@ export default function MiningGame({ onExit }: MiningGameProps) {
       case 'temple': return gameState.buildings.temple.owned ? 1 : 0;
       case 'wizard_tower': return gameState.buildings.wizard_tower.owned ? 1 : 0;
       case 'shipment': return gameState.buildings.shipment.count;
+      case 'gem_farm': return gameState.buildings.gem_farm?.count || 0;
+      case 'alchemy_lab': return gameState.buildings.alchemy_lab?.count || 0;
+      case 'time_machine': return gameState.buildings.time_machine?.count || 0;
+      case 'antimatter_condenser': return gameState.buildings.antimatter_condenser?.owned ? 1 : 0;
+      case 'prism': return gameState.buildings.prism?.owned ? 1 : 0;
+      case 'chancemaker': return gameState.buildings.chancemaker?.count || 0;
+      case 'fractal_engine': return gameState.buildings.fractal_engine?.count || 0;
       default: return 0;
     }
   };
+
+  // Building data for right panel — sorted by price, filtered by path and progressive unlocking
+  const availableBuildings = useMemo(() => {
+    return BUILDINGS.filter(building => {
+      if (building.pathRestriction !== null && building.pathRestriction !== gameState.chosenPath) return false;
+      // Progressive unlocking: buildings only appear when player hits "see at" threshold
+      const totalEarned = gameState.totalMoneyEarned || 0;
+      const unlockThresholds: Record<string, number> = {
+        mine: 200_000,
+        gem_farm: 1_000_000,
+        factory: 1_500_000,
+        alchemy_lab: 10_000_000,
+        time_machine: 1_000_000_000,
+        bank: 10_000_000_000,
+        antimatter_condenser: 20_000_000_000,
+        prism: 225_000_000_000,
+        chancemaker: 1_000_000_000_000,
+        wizard_tower: 5_000_000_000_000,
+        temple: 5_000_000_000_000,
+        fractal_engine: 10_000_000_000_000,
+        shipment: 50_000_000_000_000,
+      };
+      const threshold = unlockThresholds[building.id];
+      if (threshold && totalEarned < threshold && getBuildingCount(building.id) === 0) return false;
+      return true;
+    });
+  }, [gameState.chosenPath, gameState.totalMoneyEarned]);
+
+  // Collapsible right sidebar state
+  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
 
   // Miner cost
   const minerCost = getMinerCost(gameState.minerCount, gameState.prestigeCount, gameState.isHardMode);
@@ -523,14 +574,27 @@ export default function MiningGame({ onExit }: MiningGameProps) {
     return `${s}s`;
   };
 
+  // Exotic rock helper — get the right image based on HP %
+  const getExoticRockImage = useMemo(() => {
+    if (!gameState.exoticRock?.active || !gameState.exoticRock?.rockId) return null;
+    const exotic = EXOTIC_ROCKS.find(r => r.id === gameState.exoticRock.rockId);
+    if (!exotic) return null;
+    const hpPercent = gameState.exoticRock.maxHP > 0 ? gameState.exoticRock.currentHP / gameState.exoticRock.maxHP : 1;
+    if (hpPercent <= 0.3) return exotic.images.hp30;
+    if (hpPercent <= 0.7) return exotic.images.hp70;
+    return exotic.images.full;
+  }, [gameState.exoticRock]);
+
   // Building click handlers (open management modals)
   const [showTempleFromPanel, setShowTempleFromPanel] = useState(false);
   const [showWizardFromPanel, setShowWizardFromPanel] = useState(false);
   const [showBankFromPanel, setShowBankFromPanel] = useState(false);
+  const [showShipmentModal, setShowShipmentModal] = useState(false);
   const [forceOpenAchievements, setForceOpenAchievements] = useState(false);
 
   return (
     <div className="fixed inset-0 overflow-hidden select-none z-[100]">
+      <AscensionTreeHost />
       {/* Cave Background - changes based on rock level */}
       <div
         className="absolute inset-0 transition-all duration-1000"
@@ -630,7 +694,7 @@ export default function MiningGame({ onExit }: MiningGameProps) {
             </div>
             <div ref={rockRef} onClick={handleMine} onTouchEnd={handleMine} className="relative z-40 w-56 h-56 sm:w-64 sm:h-64 cursor-pointer touch-manipulation flex items-center justify-center select-none pointer-events-auto" style={{ WebkitTapHighlightColor: 'transparent' }}>
               <div className={`relative w-48 h-48 sm:w-56 sm:h-56 transition-transform hover:scale-105 active:scale-95 ${rockShake ? 'animate-shake' : ''} ${rockBroken ? 'animate-rock-break' : ''}`}>
-                <Image key={`rock-${currentRock.id}`} src={gameState.isBlocked ? '/game/rocks/coal.png' : currentRock.image} alt={gameState.isBlocked ? 'Bedrock' : currentRock.name} fill unoptimized className={`object-contain drop-shadow-2xl pointer-events-none ${rockBroken ? 'scale-110 brightness-150' : ''} ${gameState.isBlocked ? 'grayscale brightness-50' : ''}`} />
+                <Image key={`rock-${getExoticRockImage || currentRock.id}`} src={gameState.isBlocked ? '/game/rocks/coal.png' : getExoticRockImage || currentRock.image} alt={gameState.isBlocked ? 'Bedrock' : (gameState.exoticRock?.active ? 'Exotic Rock' : currentRock.name)} fill unoptimized className={`object-contain drop-shadow-2xl pointer-events-none ${rockBroken ? 'scale-110 brightness-150' : ''} ${gameState.isBlocked ? 'grayscale brightness-50' : ''}`} />
                 {rockBroken && <div className="absolute inset-0 bg-white/50 rounded-full animate-flash-out pointer-events-none" />}
                 {moneyPopups.map((p) => <div key={p.id} className="absolute pointer-events-none animate-float-up text-yellow-400 font-bold text-2xl" style={{ left: p.x, top: p.y, textShadow: '2px 2px 4px rgba(0,0,0,0.8)' }}>+${formatNumber(p.amount)}</div>)}
                 {particles.map((p) => <div key={p.id} className="absolute w-2 h-2 bg-amber-600 rounded-full pointer-events-none animate-particle" style={{ left: p.x, top: p.y, '--vx': `${p.vx}px`, '--vy': `${p.vy}px` } as React.CSSProperties} />)}
@@ -650,7 +714,7 @@ export default function MiningGame({ onExit }: MiningGameProps) {
               <div className="flex-1 bg-black/80 backdrop-blur-sm rounded-lg p-2 sm:p-3 border border-gray-700/50">
                 <div className="flex justify-between items-center mb-1">
                   <span className="text-gray-300 font-medium text-xs sm:text-sm">⛏️ {currentRock.name}</span>
-                  <span className="text-gray-400 text-[10px] sm:text-xs">{formatNumber(gameState.currentRockHP)} / {formatNumber(scaledRockMaxHP)} HP</span>
+                  <span className="text-gray-400 text-[10px] sm:text-xs">{formatNumber(currentHP)} / {formatNumber(scaledRockMaxHP)} HP</span>
                 </div>
                 <div className="w-full h-2 sm:h-3 bg-gray-800 rounded-full overflow-hidden">
                   <div className="h-full bg-gradient-to-r from-green-500 to-emerald-400 transition-all duration-150" style={{ width: `${progressPercent}%` }} />
@@ -789,17 +853,46 @@ export default function MiningGame({ onExit }: MiningGameProps) {
               </div>
             )}
 
-            {/* Bonuses summary */}
-            {(bonuses.moneyBonus > 0 || bonuses.rockDamageBonus > 0 || bonuses.couponBonus > 0 || bonuses.clickSpeedBonus > 0 || bonuses.minerDamageBonus > 0 || bonuses.minerSpeedBonus > 0) && (
+            {/* Bonuses — click any stat to see exact sources */}
+            {(bonuses.moneyBonus > 0 || bonuses.rockDamageBonus > 0 || bonuses.couponBonus > 0 || bonuses.clickSpeedBonus > 0 || bonuses.minerDamageBonus > 0 || bonuses.minerSpeedBonus > 0 || bonuses.luckBonus > 0 || bonuses.dropChanceBonus > 0) && (
               <div className="flex flex-col gap-1">
-                <span className="text-xs font-bold text-white">Bonuses</span>
+                <span className="text-xs font-bold text-white">Bonuses <span className="text-[9px] text-gray-500 font-normal">(click to expand)</span></span>
                 <div className="space-y-0.5">
-                  {bonuses.moneyBonus > 0 && <div className="text-[11px] text-green-400">💰 +{(bonuses.moneyBonus * 100).toFixed(0)}% Money</div>}
-                  {bonuses.rockDamageBonus > 0 && <div className="text-[11px] text-red-400">💥 +{(bonuses.rockDamageBonus * 100).toFixed(0)}% Damage</div>}
-                  {bonuses.clickSpeedBonus > 0 && <div className="text-[11px] text-cyan-400">⚡ +{(bonuses.clickSpeedBonus * 100).toFixed(0)}% Click Speed</div>}
-                  {bonuses.couponBonus > 0 && <div className="text-[11px] text-amber-400">🎟️ +{(bonuses.couponBonus * 100).toFixed(0)}% Lottery</div>}
-                  {bonuses.minerDamageBonus > 0 && <div className="text-[11px] text-orange-400">⛏️ +{(bonuses.minerDamageBonus * 100).toFixed(0)}% Miner Dmg</div>}
-                  {bonuses.minerSpeedBonus > 0 && <div className="text-[11px] text-sky-400">🏃 +{(bonuses.minerSpeedBonus * 100).toFixed(0)}% Miner Spd</div>}
+                  {([
+                    { key: 'moneyBonus' as const, icon: '💰', label: 'Money', color: 'text-green-400', val: bonuses.moneyBonus },
+                    { key: 'rockDamageBonus' as const, icon: '💥', label: 'Damage', color: 'text-red-400', val: bonuses.rockDamageBonus },
+                    { key: 'clickSpeedBonus' as const, icon: '⚡', label: 'Click Speed', color: 'text-cyan-400', val: bonuses.clickSpeedBonus },
+                    { key: 'couponBonus' as const, icon: '🎟️', label: 'Lottery', color: 'text-amber-400', val: bonuses.couponBonus },
+                    { key: 'minerDamageBonus' as const, icon: '⛏️', label: 'Miner Dmg', color: 'text-orange-400', val: bonuses.minerDamageBonus },
+                    { key: 'minerSpeedBonus' as const, icon: '🏃', label: 'Miner Spd', color: 'text-sky-400', val: bonuses.minerSpeedBonus },
+                    { key: 'luckBonus' as const, icon: '🍀', label: 'Luck', color: 'text-emerald-400', val: bonuses.luckBonus },
+                    { key: 'dropChanceBonus' as const, icon: '🎯', label: 'Drop Chance', color: 'text-violet-400', val: bonuses.dropChanceBonus },
+                  ]).filter(s => s.val > 0).map(s => (
+                    <div key={s.key}>
+                      <button
+                        onClick={() => setExpandedBonusStat(expandedBonusStat === s.key ? null : s.key)}
+                        className={`w-full text-left text-[11px] ${s.color} hover:brightness-125 transition-all flex items-center justify-between`}
+                      >
+                        <span>{s.icon} +{s.key === 'luckBonus' || s.key === 'dropChanceBonus' ? s.val.toFixed(1) : `${(s.val * 100).toFixed(0)}%`} {s.label}</span>
+                        <span className="text-[9px] text-gray-500">{expandedBonusStat === s.key ? '▼' : '▶'}</span>
+                      </button>
+                      {expandedBonusStat === s.key && (
+                        <div className="ml-4 mt-1 mb-2 p-2 rounded-lg bg-gray-900/80 border border-gray-700/40 space-y-1">
+                          {getBonusBreakdown(s.key).map((entry, i) => (
+                            <div key={i} className="flex justify-between text-[10px]">
+                              <span className="text-gray-300">{entry.source}</span>
+                              <span className={entry.value >= 0 ? 'text-green-400' : 'text-red-400'}>
+                                {entry.value >= 0 ? '+' : ''}{s.key === 'luckBonus' || s.key === 'dropChanceBonus' ? entry.value.toFixed(1) : `${(entry.value * 100).toFixed(0)}%`}
+                              </span>
+                            </div>
+                          ))}
+                          {getBonusBreakdown(s.key).length === 0 && (
+                            <div className="text-[10px] text-gray-500">No sources found</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -885,9 +978,9 @@ export default function MiningGame({ onExit }: MiningGameProps) {
               >
                 <div className={`relative w-64 h-64 xl:w-72 xl:h-72 transition-transform hover:scale-105 active:scale-95 ${rockShake ? 'animate-shake' : ''} ${rockBroken ? 'animate-rock-break' : ''}`}>
                   <Image
-                    key={`rock-${currentRock.id}-${gameState.isBlocked ? 'bedrock' : currentRock.image}`}
-                    src={gameState.isBlocked ? '/game/rocks/coal.png' : currentRock.image}
-                    alt={gameState.isBlocked ? 'Bedrock (Blocked)' : currentRock.name}
+                    key={`rock-${getExoticRockImage || currentRock.id}-${gameState.isBlocked ? 'bedrock' : currentRock.image}`}
+                    src={gameState.isBlocked ? '/game/rocks/coal.png' : getExoticRockImage || currentRock.image}
+                    alt={gameState.isBlocked ? 'Bedrock (Blocked)' : (gameState.exoticRock?.active ? 'Exotic Rock' : currentRock.name)}
                     fill unoptimized
                     className={`object-contain drop-shadow-2xl transition-all pointer-events-none ${rockBroken ? 'scale-110 brightness-150' : ''} ${gameState.isBlocked ? 'grayscale brightness-50' : ''}`}
                   />
@@ -913,7 +1006,7 @@ export default function MiningGame({ onExit }: MiningGameProps) {
               <div className="bg-black/60 rounded-lg px-3 py-2">
                 <div className="flex justify-between items-center mb-1">
                   <span className="text-sm font-bold text-white">HP</span>
-                  <span className="text-xs text-gray-200">{formatNumber(gameState.currentRockHP)} / {formatNumber(scaledRockMaxHP)}</span>
+                  <span className="text-xs text-gray-200">{formatNumber(currentHP)} / {formatNumber(scaledRockMaxHP)}</span>
                 </div>
                 <div className="w-full h-4 bg-gray-900 rounded-full overflow-hidden border border-gray-700">
                   <div className="h-full bg-gradient-to-r from-amber-600 to-amber-500 shadow-[0_0_10px_rgba(234,88,12,0.5)] transition-all duration-150" style={{ width: `${progressPercent}%` }} />
@@ -954,8 +1047,16 @@ export default function MiningGame({ onExit }: MiningGameProps) {
             </div>
           </div>
 
-          {/* ========== RIGHT PANEL — Buildings ========== */}
-          <div className="w-80 flex-none flex flex-col self-stretch overflow-y-auto bg-gray-950/90 backdrop-blur-md border-l border-gray-700/40 panel-no-scroll">
+          {/* ========== RIGHT PANEL — Buildings (Collapsible) ========== */}
+          {/* Collapse toggle arrow */}
+          <button
+            onClick={() => setRightPanelCollapsed(prev => !prev)}
+            className="absolute right-0 top-1/2 -translate-y-1/2 z-30 bg-gray-800/90 border border-gray-700/50 rounded-l-lg px-1 py-4 text-gray-400 hover:text-white hover:bg-gray-700/90 transition-all"
+            style={{ right: rightPanelCollapsed ? 0 : 320 }}
+          >
+            {rightPanelCollapsed ? '◀' : '▶'}
+          </button>
+          <div className={`${rightPanelCollapsed ? 'w-0 overflow-hidden opacity-0' : 'w-80'} flex-none flex flex-col self-stretch overflow-y-auto bg-gray-950/90 backdrop-blur-md border-l border-gray-700/40 panel-no-scroll transition-all duration-300`}>
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700/30">
               <span className="text-sm font-bold text-white">Buildings</span>
@@ -976,7 +1077,7 @@ export default function MiningGame({ onExit }: MiningGameProps) {
                 const cost = getBuildingCostForType(building.id);
                 const canAfford = canAffordBuilding(building.id);
                 const isMaxed = building.maxCount !== -1 && count >= building.maxCount;
-                const isClickable = ['temple', 'wizard_tower', 'bank'].includes(building.id) && count > 0;
+                const isClickable = ['temple', 'wizard_tower', 'bank', 'shipment'].includes(building.id) && count > 0;
 
                 return (
                   <div
@@ -993,6 +1094,7 @@ export default function MiningGame({ onExit }: MiningGameProps) {
                         if (building.id === 'temple') setShowTempleFromPanel(true);
                         if (building.id === 'wizard_tower') setShowWizardFromPanel(true);
                         if (building.id === 'bank') setShowBankFromPanel(true);
+                        if (building.id === 'shipment') setShowShipmentModal(true);
                       }
                     }}
                   >
@@ -1010,8 +1112,8 @@ export default function MiningGame({ onExit }: MiningGameProps) {
                       {count > 0 && (
                         <span className="text-[11px] text-amber-400">Level {count}</span>
                       )}
-                      {count === 0 && !canAfford && (
-                        <span className="text-[11px] text-gray-500">{building.description.slice(0, 40)}...</span>
+                      {count === 0 && (
+                        <p className="text-[10px] text-gray-500 overflow-hidden text-ellipsis" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{building.description}</p>
                       )}
                     </div>
 
@@ -1079,6 +1181,32 @@ export default function MiningGame({ onExit }: MiningGameProps) {
                     </button>
                   ))}
                 </div>
+                {/* Custom buy amount */}
+                <div className="flex gap-1.5 mt-1.5">
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="Custom #"
+                    value={customMinerAmount}
+                    onChange={(e) => setCustomMinerAmount(e.target.value)}
+                    className="flex-1 bg-gray-900/80 border border-gray-700/50 rounded px-2 py-1 text-[10px] text-white placeholder-gray-500 focus:outline-none focus:border-amber-500/50"
+                  />
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const amt = parseInt(customMinerAmount);
+                      if (amt > 0) { buyMiners(amt); setCustomMinerAmount(''); }
+                    }}
+                    disabled={!customMinerAmount || parseInt(customMinerAmount) <= 0 || gameState.yatesDollars < minerCost}
+                    className={`px-3 py-1 rounded text-[10px] font-bold transition-all ${
+                      customMinerAmount && parseInt(customMinerAmount) > 0 && gameState.yatesDollars >= minerCost
+                        ? 'bg-amber-600 hover:bg-amber-500 text-white active:scale-95'
+                        : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                    }`}
+                  >
+                    Buy
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -1105,14 +1233,16 @@ export default function MiningGame({ onExit }: MiningGameProps) {
               <span className="text-[10px] font-bold text-white uppercase tracking-wider">Achievments</span>
             </button>
 
-            {/* Trinket Collection */}
-            <button
-              onClick={() => setShowTrinketIndex(true)}
-              className="flex h-14 w-28 flex-col items-center justify-center gap-0.5 rounded-lg border-r-4 border-b-4 border-purple-800 bg-purple-700 hover:bg-purple-600 active:border-r-0 active:border-b-0 active:translate-x-1 active:translate-y-1 transition-all"
-            >
-              <span className="text-lg">💎</span>
-              <span className="text-[10px] font-bold text-white uppercase tracking-wider">Trinkets</span>
-            </button>
+            {/* Trinket Collection — unlocks at 2 prestiges + 100K */}
+            {(gameState.prestigeCount >= 2 || gameState.ownedTrinketIds.length > 0) && (
+              <button
+                onClick={() => setShowTrinketIndex(true)}
+                className="flex h-14 w-28 flex-col items-center justify-center gap-0.5 rounded-lg border-r-4 border-b-4 border-purple-800 bg-purple-700 hover:bg-purple-600 active:border-r-0 active:border-b-0 active:translate-x-1 active:translate-y-1 transition-all"
+              >
+                <span className="text-lg">💎</span>
+                <span className="text-[10px] font-bold text-white uppercase tracking-wider">Trinkets</span>
+              </button>
+            )}
 
             {/* Ranking */}
             <button
@@ -1141,8 +1271,8 @@ export default function MiningGame({ onExit }: MiningGameProps) {
               <span className="text-[10px] font-bold text-white uppercase tracking-wider">Settings</span>
             </button>
 
-            {/* Shady Sam (Darkness path only) */}
-            {gameState.chosenPath === 'darkness' && (
+            {/* Shady Sam (Darkness path only, unlocks at prestige 5 + 500K) */}
+            {gameState.chosenPath === 'darkness' && gameState.prestigeCount >= 5 && (
               <button
                 onClick={() => setShowShadySam(true)}
                 className="flex h-14 w-28 flex-col items-center justify-center gap-0.5 rounded-lg border-r-4 border-b-4 border-purple-900 bg-gray-800 hover:bg-purple-900 active:border-r-0 active:border-b-0 active:translate-x-1 active:translate-y-1 transition-all"
@@ -1264,6 +1394,7 @@ export default function MiningGame({ onExit }: MiningGameProps) {
       {showTempleFromPanel && <TempleModal onClose={() => setShowTempleFromPanel(false)} />}
       <WizardTowerSidebar isOpen={showWizardFromPanel} onClose={() => setShowWizardFromPanel(false)} />
       {showBankFromPanel && <BankModal onClose={() => setShowBankFromPanel(false)} />}
+      {showShipmentModal && <ShipmentModal onClose={() => setShowShipmentModal(false)} />}
       {showShadySam && <ShadySamModal onClose={() => setShowShadySam(false)} />}
       <SideLevelPanel isOpen={showSideLevel} onClose={() => setShowSideLevel(false)} />
 

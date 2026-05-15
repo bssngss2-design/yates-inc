@@ -1,35 +1,53 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
+import Image from 'next/image';
 import { useGame } from '@/contexts/GameContext';
-import {
-  ShadySamStat,
-  SHADY_SAM_STAT_LABELS,
-  SHADY_SAM_STAT_ICONS,
-  getShadySamSwapCost,
-} from '@/types/game';
 
 interface ShadySamModalProps {
   onClose: () => void;
 }
 
-const ALL_STATS: ShadySamStat[] = ['couponLuck', 'minerSpeed', 'clickDamage', 'pcxDamage', 'moneyMultiplier', 'minerDamage'];
+type BoxTier = 'sketchy' | 'suspicious' | 'cursed';
 
-const SAM_STAT_TO_BONUS: Record<ShadySamStat, string> = {
-  couponLuck: 'couponBonus',
-  minerSpeed: 'minerSpeedBonus',
-  clickDamage: 'clickSpeedBonus',
-  pcxDamage: 'rockDamageBonus',
-  moneyMultiplier: 'moneyBonus',
-  minerDamage: 'minerDamageBonus',
-};
+const MYSTERY_BOXES = [
+  {
+    tier: 'sketchy' as BoxTier,
+    name: 'Sketchy Box',
+    cost: 500_000,
+    closedImage: '/game/shadysam/sketchy_closed.png',
+    openGoodImage: '/game/shadysam/sketchy_open.png',
+    openBadImage: '/game/shadysam/sketchy_open.png',
+    goodHints: ['50% → 10% of your $', '40% → random buff', '10% → nothing'],
+    badHints: [],
+  },
+  {
+    tier: 'suspicious' as BoxTier,
+    name: 'Suspicious Crate',
+    cost: 50_000_000,
+    closedImage: '/game/shadysam/suspicious_closed.png',
+    openGoodImage: '/game/shadysam/suspicious_open.png',
+    openBadImage: '/game/shadysam/suspicious_open.png',
+    goodHints: ['40% → 5 Stokens', '20% → 40% of $', '30% → buff', '10% → trinket'],
+    badHints: [],
+  },
+  {
+    tier: 'cursed' as BoxTier,
+    name: 'Cursed Chest',
+    cost: 5_000_000_000,
+    closedImage: '/game/shadysam/cursed_closed.png',
+    openGoodImage: '/game/shadysam/cursed_open_good.png',
+    openBadImage: '/game/shadysam/cursed_open_bad.png',
+    goodHints: ['50% → 60% of $', '40% → mega buff', '10% → rare trinket'],
+    badHints: [],
+  },
+];
 
 export default function ShadySamModal({ onClose }: ShadySamModalProps) {
-  const { gameState, addShadySamSwap, removeShadySamSwap, getTotalBonuses } = useGame();
-  const [debuffStat, setDebuffStat] = useState<ShadySamStat>('couponLuck');
-  const [buffStat, setBuffStat] = useState<ShadySamStat>('minerSpeed');
-  const [swapAmount, setSwapAmount] = useState(1000);
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+  const { gameState, openMysteryBox } = useGame();
+  const [phase, setPhase] = useState<'shop' | 'opening' | 'result'>('shop');
+  const [selectedTier, setSelectedTier] = useState<BoxTier | null>(null);
+  const [result, setResult] = useState<{ isGood: boolean; reward: string } | null>(null);
 
   const formatNumber = (num: number): string => {
     if (num >= 1e18) return `${(num / 1e18).toFixed(1)}Qi`;
@@ -41,219 +59,124 @@ export default function ShadySamModal({ onClose }: ShadySamModalProps) {
     return Math.floor(num).toString();
   };
 
-  const bonuses = getTotalBonuses();
+  const handleOpenBox = (tier: BoxTier) => {
+    setSelectedTier(tier);
+    setPhase('opening');
 
-  const getStatPercent = useCallback((stat: ShadySamStat): number => {
-    const key = SAM_STAT_TO_BONUS[stat] as keyof typeof bonuses;
-    return Math.round((bonuses[key] || 0) * 100);
-  }, [bonuses]);
-
-  const swapCost = getShadySamSwapCost(swapAmount);
-  const canAfford = gameState.yatesDollars >= swapCost;
-  const debuffStatPercent = getStatPercent(debuffStat);
-  const debuffHasEnough = debuffStatPercent >= swapAmount;
-  const isValid = debuffStat !== buffStat && swapAmount > 0 && debuffHasEnough;
-
-  const handleSwap = () => {
-    if (!isValid || !canAfford) return;
-    const ok = addShadySamSwap(debuffStat, buffStat, swapAmount);
-    if (ok) {
-      setFeedback({ type: 'success', msg: `Swapped ${swapAmount}% ${SHADY_SAM_STAT_LABELS[debuffStat]} → ${SHADY_SAM_STAT_LABELS[buffStat]}` });
-    } else {
-      setFeedback({ type: 'error', msg: 'Swap failed!' });
-    }
-    setTimeout(() => setFeedback(null), 2500);
+    setTimeout(() => {
+      const boxResult = openMysteryBox(tier);
+      if (boxResult) {
+        setResult(boxResult);
+      } else {
+        setResult({ isGood: false, reward: "Can't afford this box!" });
+      }
+      setPhase('result');
+    }, 2000);
   };
+
+  const currentBox = selectedTier ? MYSTERY_BOXES.find(b => b.tier === selectedTier) : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/85 backdrop-blur-sm" onClick={phase === 'shop' ? onClose : undefined} />
 
-      <div className="relative bg-gradient-to-br from-gray-900/95 to-purple-950/95 rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto border-2 border-purple-500/40 shadow-2xl">
+      <div className="relative bg-gradient-to-br from-gray-900/95 to-purple-950/95 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto border-2 border-purple-500/40 shadow-2xl">
         <div className="bg-gradient-to-r from-gray-800 to-purple-900 px-6 py-4 flex justify-between items-center">
           <div>
             <h2 className="text-2xl font-bold text-white">
-              <span className="mr-2" style={{ fontSize: '1.5rem' }}>🕶️</span>
-              Shady Sam
+              <Image src="/game/buildings/shadysam.png" alt="Sam" width={32} height={32} className="inline mr-2" style={{ imageRendering: 'pixelated' }} unoptimized />
+              Shady Sam&apos;s Mystery Boxes
             </h2>
-            <p className="text-purple-300 text-sm">Swap stats... for a price</p>
+            <p className="text-purple-300 text-sm">Pick a box... if you dare</p>
           </div>
-          <button onClick={onClose} className="text-white/80 hover:text-white text-3xl leading-none p-2">×</button>
+          {phase === 'shop' && (
+            <button onClick={onClose} className="text-white/80 hover:text-white text-3xl leading-none p-2">×</button>
+          )}
         </div>
 
-        <div className="p-6 space-y-5">
-          <div className="bg-black/30 rounded-xl p-3 border border-yellow-600/30 flex justify-between items-center">
+        <div className="p-6">
+          <div className="bg-black/30 rounded-xl p-3 border border-yellow-600/30 flex justify-between items-center mb-5">
             <span className="text-yellow-400 font-bold text-sm">💵 Your Cash</span>
             <span className="text-white font-bold">${formatNumber(gameState.yatesDollars)}</span>
           </div>
 
-          {/* Feedback banner */}
-          {feedback && (
-            <div className={`rounded-lg px-4 py-2 text-sm font-bold text-center transition-all ${
-              feedback.type === 'success' ? 'bg-green-600/30 border border-green-500 text-green-300' : 'bg-red-600/30 border border-red-500 text-red-300'
-            }`}>
-              {feedback.type === 'success' ? '✓' : '✕'} {feedback.msg}
-            </div>
-          )}
-
-          <div className="bg-black/30 rounded-xl p-4 border border-purple-600/30 space-y-4">
-            <h3 className="text-purple-400 font-bold text-sm">New Swap — ${formatNumber(swapCost)}</h3>
-
-            <div>
-              <span className="text-gray-300 text-xs font-bold mb-1 block">AMOUNT</span>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={swapAmount}
-                  onChange={(e) => {
-                    const v = Math.max(1, Math.floor(Number(e.target.value) || 1));
-                    setSwapAmount(v);
-                  }}
-                  className="flex-1 bg-black/40 border border-purple-600/40 rounded-lg px-3 py-2 text-white text-sm font-bold focus:outline-none focus:border-purple-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  placeholder="e.g. 5000"
-                />
-                <span className="text-purple-300 font-bold text-sm">%</span>
-                <div className="flex gap-1 flex-wrap">
-                  {[100, 1000, 5000, 10000, 50000].map(preset => (
-                    <button
-                      key={preset}
-                      onClick={() => setSwapAmount(preset)}
-                      className={`px-2 py-1.5 rounded text-[10px] font-bold transition-all ${
-                        swapAmount === preset
-                          ? 'bg-purple-600/40 text-purple-200 border border-purple-500'
-                          : 'bg-black/30 text-gray-400 border border-gray-700/30 hover:border-gray-500'
-                      }`}
-                    >
-                      {preset >= 1000 ? `${preset / 1000}k` : preset}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Debuff picker */}
-            <div>
-              <span className="text-red-400 text-xs font-bold mb-1 block">SACRIFICE (-{swapAmount}%)</span>
-              <div className="grid grid-cols-3 gap-1.5">
-                {ALL_STATS.map(stat => {
-                  const pct = getStatPercent(stat);
-                  const isEmpty = pct <= 0;
-                  const selected = debuffStat === stat;
-                  return (
-                    <button
-                      key={`d_${stat}`}
-                      onClick={() => !isEmpty && setDebuffStat(stat)}
-                      disabled={isEmpty}
-                      className={`flex flex-col items-center gap-0.5 px-2 py-2 rounded-lg text-xs transition-all ${
-                        isEmpty
-                          ? 'bg-black/10 border border-gray-800/20 text-gray-700 cursor-not-allowed opacity-30'
-                          : selected
-                            ? 'bg-red-600/30 border border-red-500 text-red-300'
-                            : 'bg-black/20 border border-gray-700/30 text-gray-400 hover:border-gray-500'
-                      }`}
-                    >
-                      <span>{SHADY_SAM_STAT_ICONS[stat]}</span>
-                      <span className="text-[10px]">{SHADY_SAM_STAT_LABELS[stat]}</span>
-                      <span className={`text-[9px] font-bold ${isEmpty ? 'text-gray-700' : pct >= swapAmount ? 'text-gray-400' : 'text-red-400'}`}>
-                        {pct > 0 ? `${pct}%` : '0%'}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              {!debuffHasEnough && debuffStatPercent > 0 && (
-                <p className="text-red-400 text-[10px] mt-1">
-                  Only {debuffStatPercent}% available — lower the amount or pick another stat
-                </p>
-              )}
-              {debuffStatPercent <= 0 && (
-                <p className="text-gray-600 text-[10px] mt-1">
-                  Pick a stat that has more than 0%
-                </p>
-              )}
-            </div>
-
-            <div className="text-center text-2xl text-purple-400">↓</div>
-
-            {/* Buff picker */}
-            <div>
-              <span className="text-green-400 text-xs font-bold mb-1 block">GAIN (+{swapAmount}%)</span>
-              <div className="grid grid-cols-3 gap-1.5">
-                {ALL_STATS.map(stat => {
-                  const pct = getStatPercent(stat);
-                  return (
-                    <button
-                      key={`b_${stat}`}
-                      onClick={() => setBuffStat(stat)}
-                      className={`flex flex-col items-center gap-0.5 px-2 py-2 rounded-lg text-xs transition-all ${
-                        buffStat === stat
-                          ? 'bg-green-600/30 border border-green-500 text-green-300'
-                          : stat === debuffStat
-                            ? 'bg-black/10 border border-gray-800/30 text-gray-600 cursor-not-allowed opacity-40'
-                            : 'bg-black/20 border border-gray-700/30 text-gray-400 hover:border-gray-500'
-                      }`}
-                      disabled={stat === debuffStat}
-                    >
-                      <span>{SHADY_SAM_STAT_ICONS[stat]}</span>
-                      <span className="text-[10px]">{SHADY_SAM_STAT_LABELS[stat]}</span>
-                      <span className="text-[9px] text-gray-500">{pct}%</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Preview */}
-            {debuffStat !== buffStat && swapAmount > 0 && (
-              <div className="bg-black/20 rounded-lg p-2 text-center text-xs">
-                <span className="text-red-400">-{swapAmount}% {SHADY_SAM_STAT_LABELS[debuffStat]}</span>
-                <span className="text-gray-500 mx-2">→</span>
-                <span className="text-green-400">+{swapAmount}% {SHADY_SAM_STAT_LABELS[buffStat]}</span>
-              </div>
-            )}
-
-            <button
-              onClick={handleSwap}
-              disabled={!isValid || !canAfford}
-              className="w-full py-3 rounded-lg font-bold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {!canAfford
-                ? `Need $${formatNumber(swapCost)}`
-                : !debuffHasEnough
-                  ? `Not enough ${SHADY_SAM_STAT_LABELS[debuffStat]} (${debuffStatPercent}%)`
-                  : debuffStat === buffStat
-                    ? 'Pick different stats'
-                    : `Swap — $${formatNumber(swapCost)}`}
-            </button>
-          </div>
-
-          {/* Active Swaps */}
-          {gameState.shadySamSwaps.length > 0 && (
-            <div className="bg-black/30 rounded-xl p-4 border border-gray-600/30 space-y-2">
-              <h3 className="text-white font-bold text-sm">Active Swaps ({gameState.shadySamSwaps.length})</h3>
-              {gameState.shadySamSwaps.map(swap => (
-                <div key={swap.id} className="flex items-center justify-between bg-black/20 rounded-lg px-3 py-2">
-                  <div className="text-xs">
-                    <span className="text-red-400">{SHADY_SAM_STAT_ICONS[swap.debuffStat]} -{(swap.amount * 100).toFixed(0)}%</span>
-                    <span className="text-gray-500 mx-1.5">→</span>
-                    <span className="text-green-400">{SHADY_SAM_STAT_ICONS[swap.buffStat]} +{(swap.amount * 100).toFixed(0)}%</span>
-                  </div>
+          {phase === 'shop' && (
+            <div className="grid grid-cols-3 gap-3">
+              {MYSTERY_BOXES.map(box => {
+                const canAfford = gameState.yatesDollars >= box.cost;
+                return (
                   <button
-                    onClick={() => removeShadySamSwap(swap.id)}
-                    className="text-gray-500 hover:text-red-400 text-xs px-2 py-1 rounded hover:bg-red-900/20 transition-colors"
+                    key={box.tier}
+                    onClick={() => canAfford && handleOpenBox(box.tier)}
+                    disabled={!canAfford}
+                    className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
+                      canAfford
+                        ? 'border-purple-500/50 bg-black/30 hover:border-purple-400 hover:bg-purple-900/20 hover:scale-105 cursor-pointer'
+                        : 'border-gray-700/30 bg-black/20 opacity-50 cursor-not-allowed'
+                    }`}
                   >
-                    ✕
+                    <Image src={box.closedImage} alt={box.name} width={96} height={96} unoptimized className="object-contain" />
+                    <span className="text-white font-bold text-xs text-center">{box.name}</span>
+                    <span className={`text-[10px] font-bold ${canAfford ? 'text-yellow-400' : 'text-gray-500'}`}>
+                      ${formatNumber(box.cost)}
+                    </span>
+                    <div className="text-[9px] text-center space-y-0.5">
+                      {box.goodHints.map((h, i) => (
+                        <div key={`g${i}`} className="text-green-400/70">✓ {h}</div>
+                      ))}
+                      {box.badHints.map((h, i) => (
+                        <div key={`b${i}`} className="text-red-400/70">✕ {h}</div>
+                      ))}
+                    </div>
                   </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
-          <div className="bg-black/20 rounded-lg p-3 text-gray-500 text-xs">
-            <p>🕶️ Price scales with % swapped. You can only sacrifice stats you actually have. Remove anytime for free.</p>
-          </div>
+          {phase === 'opening' && currentBox && (
+            <div className="flex flex-col items-center gap-4 py-8">
+              <div className="animate-bounce">
+                <Image src={currentBox.closedImage} alt={currentBox.name} width={160} height={160} unoptimized className="object-contain" />
+              </div>
+              <p className="text-purple-300 text-lg font-bold animate-pulse">Opening {currentBox.name}...</p>
+              <div className="flex gap-2">
+                {[...Array(5)].map((_, i) => (
+                  <div key={i} className="w-3 h-3 rounded-full bg-purple-500 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {phase === 'result' && currentBox && result && (
+            <div className="flex flex-col items-center gap-4 py-6">
+              <Image
+                src={result.isGood ? currentBox.openGoodImage : currentBox.openBadImage}
+                alt="Result"
+                width={180}
+                height={180}
+                unoptimized
+                className="object-contain"
+              />
+              <div className="text-center">
+                <p className="text-3xl mb-2">{result.reward.includes('Nothing') ? '😐' : '🎉'}</p>
+                <p className={`text-lg font-bold px-4 py-2 rounded-lg ${
+                  result.reward.includes('Nothing') ? 'text-gray-400 bg-gray-800/50' :
+                  result.reward.includes('trinket') ? 'text-purple-300 bg-purple-900/40 border border-purple-500/30' :
+                  result.reward.includes('Stokens') ? 'text-blue-300 bg-blue-900/40 border border-blue-500/30' :
+                  'text-green-300 bg-green-900/40 border border-green-500/30'
+                }`}>
+                  {result.reward}
+                </p>
+              </div>
+              <button
+                onClick={() => { setPhase('shop'); setSelectedTier(null); setResult(null); }}
+                className="px-8 py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl transition-all"
+              >
+                Try Again
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

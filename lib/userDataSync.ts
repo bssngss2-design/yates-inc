@@ -76,6 +76,15 @@ export interface UserGameData {
   lottery_tickets?: number;
   // Shady Sam
   shady_sam_swaps?: string;
+  // Wandering Trader permanent buffs
+  wandering_trader_perm_buffs?: string;
+  // Powerup cooldowns
+  powerup_cooldowns?: string;
+  // Ascension Tree
+  gems?: number;
+  heavenly_chips?: number;
+  total_hc_earned?: number;
+  owned_ascension_node_ids?: string[];
   // Timestamp (set by Supabase)
   updated_at?: string;
 }

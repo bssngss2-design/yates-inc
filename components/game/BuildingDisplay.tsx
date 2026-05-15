@@ -17,14 +17,9 @@ export default function BuildingDisplay() {
   // Get all owned buildings with their counts
   // Filter out buildings that don't match the player's path
   const ownedBuildings = BUILDINGS.filter(building => {
-    // Skip shipment for now
-    if (building.id === 'shipment') return false;
-    
-    // Skip path-restricted buildings if player is on wrong path
     if (building.pathRestriction !== null && building.pathRestriction !== gameState.chosenPath) {
       return false;
     }
-    
     const count = getBuildingCount(building.id);
     return count > 0;
   }).map(building => ({
@@ -40,6 +35,13 @@ export default function BuildingDisplay() {
       case 'temple': return gameState.buildings.temple.owned ? 1 : 0;
       case 'wizard_tower': return gameState.buildings.wizard_tower.owned ? 1 : 0;
       case 'shipment': return gameState.buildings.shipment.count;
+      case 'gem_farm': return gameState.buildings.gem_farm?.count || 0;
+      case 'alchemy_lab': return gameState.buildings.alchemy_lab?.count || 0;
+      case 'time_machine': return gameState.buildings.time_machine?.count || 0;
+      case 'antimatter_condenser': return gameState.buildings.antimatter_condenser?.owned ? 1 : 0;
+      case 'prism': return gameState.buildings.prism?.owned ? 1 : 0;
+      case 'chancemaker': return gameState.buildings.chancemaker?.count || 0;
+      case 'fractal_engine': return gameState.buildings.fractal_engine?.count || 0;
       default: return 0;
     }
   }
@@ -69,14 +71,22 @@ export default function BuildingDisplay() {
         <div className="bg-black/90 backdrop-blur-sm rounded-lg px-2 py-1.5 border border-amber-600/30 flex flex-wrap gap-1 max-w-[160px] justify-end">
           {ownedBuildings.map((building) => {
             const isClickable = clickableBuildings.includes(building.id);
-            const shortName = {
+            const emojiMap: Record<string, string> = {
               mine: '⛏️',
               bank: '🏦',
               factory: '🏭',
               temple: '⛪',
               wizard_tower: '🧙',
               shipment: '🚀',
-            }[building.id] || '🏠';
+              gem_farm: '💎',
+              alchemy_lab: '⚗️',
+              time_machine: '⏰',
+              antimatter_condenser: '⚛️',
+              prism: '🔮',
+              chancemaker: '🍀',
+              fractal_engine: '🔷',
+            };
+            const shortName = emojiMap[building.id] || '🏠';
             
             return (
               <button

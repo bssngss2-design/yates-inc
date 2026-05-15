@@ -100,7 +100,7 @@ export default function RouletteWheel({ isOpen, onClose }: RouletteWheelProps) {
     const segmentAngle = 360 / 8;
     const targetAngle = targetSegmentIndex * segmentAngle + segmentAngle / 2;
     const fullSpins = 6 + Math.floor(Math.random() * 3); // 6-8 full spins
-    const finalRotation = fullSpins * 360 + (360 - targetAngle) + 90;
+    const finalRotation = fullSpins * 360 + (360 - targetAngle);
 
     // Start spin animation
     setTimeout(() => {

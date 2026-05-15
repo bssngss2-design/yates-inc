@@ -48,7 +48,7 @@ export default function GameTerminal({ isOpen, onClose, onMine }: GameTerminalPr
   const terminalRef = useRef<HTMLDivElement>(null);
   const cmIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
-  const { gameState, resetGame, buyPickaxe, equipPickaxe, prestige, dismissWarning, clearClickHistory, addMoney, addMiners, addPrestigeTokens, giveTrinket, givePickaxe, setTotalClicks, toggleAutoPrestige, giveTitle, equipTitle, unlockAllAchievements, selectPath, maxAll, giveAllTrinkets, spawnWanderingTrader, addStokens } = useGame();
+  const { gameState, resetGame, buyPickaxe, equipPickaxe, prestige, dismissWarning, clearClickHistory, addMoney, addMiners, addPrestigeTokens, giveTrinket, givePickaxe, setTotalClicks, toggleAutoPrestige, giveTitle, equipTitle, unlockAllAchievements, selectPath, maxAll, giveAllTrinkets, giveAllTrinketsOnly, giveAllTrinketsAndTalismans, giveAllTrinketsAndRelics, spawnWanderingTrader, addStokens } = useGame();
   const { employee } = useAuth();
   const { client } = useClient();
   
@@ -1005,6 +1005,30 @@ export default function GameTerminal({ isOpen, onClose, onMine }: GameTerminalPr
         addToHistory(`   ${TRINKETS.length} trinkets + ${TRINKETS.length} relics + ${TRINKETS.length} talismans = ${TRINKETS.length * 3} items`);
       }
     }
+    else if (trimmed === 'gt') {
+      if (!isBanAdmin) {
+        addToHistory('❌ Admin only command.');
+      } else {
+        giveAllTrinketsOnly();
+        addToHistory(`💍 Gave all ${TRINKETS.length} trinkets.`);
+      }
+    }
+    else if (trimmed === 'gtt') {
+      if (!isBanAdmin) {
+        addToHistory('❌ Admin only command.');
+      } else {
+        giveAllTrinketsAndTalismans();
+        addToHistory(`💍 Gave all ${TRINKETS.length} trinkets + ${TRINKETS.length} talismans.`);
+      }
+    }
+    else if (trimmed === 'gtr') {
+      if (!isBanAdmin) {
+        addToHistory('❌ Admin only command.');
+      } else {
+        giveAllTrinketsAndRelics();
+        addToHistory(`💍 Gave all ${TRINKETS.length} trinkets + ${TRINKETS.length} relics.`);
+      }
+    }
     // Prestige tokens command (admin or authenticated guest)
     else if (trimmed.startsWith('tokens ')) {
       if (!isBanAdmin && !guestAuthenticated) {
@@ -1029,6 +1053,21 @@ export default function GameTerminal({ isOpen, onClose, onMine }: GameTerminalPr
         if (result) {
           addToHistory(`⚡ Force prestige activated!`);
           addToHistory(`✨ New multiplier: ${result.newMultiplier.toFixed(1)}x`);
+          if (typeof window !== 'undefined') {
+            // Terminal cheat: always open the ascension tree, even pre-P10
+            setTimeout(() => {
+              window.dispatchEvent(
+                new CustomEvent('yates-open-ascension-tree', {
+                  detail: { hcEarned: result.hcEarnedThisPrestige },
+                })
+              );
+            }, 50);
+            if (result.newPrestigeCount >= 10) {
+              addToHistory(`🌌 Opening Ascension Tree...`);
+            } else {
+              addToHistory(`🌌 Ascension Tree opened (admin override).`);
+            }
+          }
         } else {
           addToHistory(`❌ Prestige failed (unknown error)`);
         }
@@ -1071,7 +1110,7 @@ export default function GameTerminal({ isOpen, onClose, onMine }: GameTerminalPr
       addToHistory(`❌ Unknown command: ${trimmed}`);
       addToHistory('Type help for available commands');
     }
-  }, [addToHistory, resetGame, buyPickaxe, equipPickaxe, isEmployee, isBanAdmin, cmActive, banUser, unbanUser, listBanned, listUsers, giveToPlayer, addMoney, addMiners, addPrestigeTokens, giveTrinket, setTotalClicks, prestige, toggleAutoPrestige, gameState.autoPrestigeEnabled, gameState.isBlocked, gameState.chosenPath, gameState.stokens, dismissWarning, clearClickHistory, givePickaxe, selectPath, maxAll, spawnWanderingTrader, addStokens, guestAuthenticated]);
+  }, [addToHistory, resetGame, buyPickaxe, equipPickaxe, isEmployee, isBanAdmin, cmActive, banUser, unbanUser, listBanned, listUsers, giveToPlayer, addMoney, addMiners, addPrestigeTokens, giveTrinket, setTotalClicks, prestige, toggleAutoPrestige, gameState.autoPrestigeEnabled, gameState.isBlocked, gameState.chosenPath, gameState.stokens, dismissWarning, clearClickHistory, givePickaxe, selectPath, maxAll, giveAllTrinkets, giveAllTrinketsOnly, giveAllTrinketsAndTalismans, giveAllTrinketsAndRelics, spawnWanderingTrader, addStokens, guestAuthenticated]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

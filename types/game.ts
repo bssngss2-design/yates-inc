@@ -207,6 +207,42 @@ export function getShadySamSwapCost(percentAmount: number): number {
   return Math.floor(1000 * Math.pow(percentAmount, 2.6));
 }
 
+// Exotic rock delivered by Shipment — temporarily replaces the current rock
+export interface ExoticRock {
+  id: string;
+  name: string;
+  baseHP: number;
+  moneyPerClick: number;
+  breakReward: number;
+  images: { full: string; hp70: string; hp30: string };
+}
+
+export const EXOTIC_ROCKS: ExoticRock[] = [
+  {
+    id: 'clown_rock',
+    name: 'Clown Rock',
+    baseHP: 100_000_000,
+    moneyPerClick: 120_000_000,
+    breakReward: 1_000_000_000,
+    images: { full: '/game/rocks/exotic/clown_100.png', hp70: '/game/rocks/exotic/clown_70.png', hp30: '/game/rocks/exotic/clown_30.png' },
+  },
+  {
+    id: 'schavitsky_rock',
+    name: "Schavitsky's Rock",
+    baseHP: 500_000_000,
+    moneyPerClick: 350_000_000,
+    breakReward: 5_000_000_000,
+    images: { full: '/game/rocks/exotic/schavitsky_100.png', hp70: '/game/rocks/exotic/schavitsky_70.png', hp30: '/game/rocks/exotic/schavitsky_30.png' },
+  },
+];
+
+export interface ExoticRockState {
+  active: boolean;
+  rockId: string | null;
+  currentHP: number;
+  maxHP: number;
+}
+
 export interface GameState {
   yatesDollars: number;
   totalClicks: number;
@@ -215,6 +251,7 @@ export interface GameState {
   currentRockHP: number;
   rocksMinedCount: number;
   ownedPickaxeIds: number[];
+  exoticRock: ExoticRockState;
   coupons: {
     discount30: number;
     discount50: number;
@@ -316,10 +353,19 @@ export interface GameState {
   wtRedeemed: boolean;                       // Completed redemption path after ban
   wtDialogCompleted: boolean;                // Browse More button disappears after deal/redemption
   wtMoneyTax: number;                        // Percentage of money earned that goes to WT (0, 0.05, 0.15, 0.25)
+  // Wandering Trader permanent buffs (persisted)
+  wanderingTraderPermBuffs: {
+    moneyBonus: number;
+    couponLuckBonus: number;
+    minerSpeedBonus: number;
+    minerDamageBonus: number;
+  };
   // =====================
   // SHADY SAM (Darkness path only — stat swaps)
   // =====================
   shadySamSwaps: ShadySamSwap[];
+  // Powerup cooldowns (timestamp when cooldown expires)
+  powerupCooldowns: Record<string, number>;
   // =====================
   // PREMIUM PRODUCTS (from /products/premium shop)
   // =====================
@@ -331,6 +377,14 @@ export interface GameState {
   hardModePrestigeCount: number;             // Prestige count specific to Hard Mode (for trinket wipes)
   lotteryTickets: number;                    // Hard Mode currency (replaces powerups)
   hardModeAchievements: string[];            // Hard Mode specific achievements
+  // =====================
+  // ASCENSION TREE (prestige 10+ heavenly upgrade system)
+  // =====================
+  gems: number;                              // Gems from Gem Farms (25 gems = 1 HC on prestige)
+  heavenlyChips: number;                     // Permanent currency for ascension upgrades
+  totalHCEarned: number;                     // Lifetime HC earned (for display)
+  ownedAscensionNodeIds: string[];           // Purchased ascension tree nodes
+  isAscensionTreeOpen: boolean;              // Freeze all income while tree is open
 }
 
 // Premium product buff definitions
@@ -586,15 +640,15 @@ export const TRINKETS: Trinket[] = [
     cost: 67e30, // 67 Nonillion
     shopChance: 0, // Always in shop as permanent 3rd slot, not random
     effects: {
-      moneyBonus: 60.0,
-      rockDamageBonus: 60.0,
-      minerSpeedBonus: 60.0,
-      minerDamageBonus: 60.0,
-      clickSpeedBonus: 60.0,
-      couponLuckBonus: 60.0,
-      bankInterestBonus: 1.12, // +12% bank interest (1.12x multiplier)
+      moneyBonus: 2.5,
+      rockDamageBonus: 2.5,
+      minerSpeedBonus: 2.5,
+      minerDamageBonus: 2.5,
+      clickSpeedBonus: 2.5,
+      couponLuckBonus: 2.5,
+      bankInterestBonus: 2, // +1 point = 2x multiplier
     },
-    description: '+6000% EVERYTHING + 12% bank interest - The ultimate trinket',
+    description: '+250% EVERYTHING + 1pt bank interest - The ultimate trinket',
   },
   {
     id: 'spike',
@@ -743,6 +797,7 @@ export const TRINKETS: Trinket[] = [
       minerSpeedBonus: 1.00
     },
     description: '+150% money, +230% click speed, +45% pcx/miner dmg, +100% miner speed',
+    // Talisman: 200/200/150/150/200 | Relic: 150/150/100/100/150 (money, click, dmg, minerDmg, minerSpd)
   },
   {
     id: 'silver_trophy',
@@ -888,24 +943,76 @@ export const TALISMAN_CONVERSION_COSTS: Record<string, TalismanConversionCost> =
 
 // Yates Totem has hardcoded relic/talisman stats instead of using generic rarity multipliers
 export const YATES_TOTEM_RELIC_EFFECTS: TrinketEffects = {
-  moneyBonus: 80.0,         // 8000%
-  rockDamageBonus: 80.0,
-  minerSpeedBonus: 80.0,
-  minerDamageBonus: 80.0,
-  clickSpeedBonus: 80.0,
-  couponLuckBonus: 80.0,
-  bankInterestBonus: 1.15,  // +15% bank interest
+  moneyBonus: 3.2,
+  rockDamageBonus: 3.2,
+  minerSpeedBonus: 3.2,
+  minerDamageBonus: 3.2,
+  clickSpeedBonus: 3.2,
+  couponLuckBonus: 3.2,
+  bankInterestBonus: 2.2,   // +1.2 points = 2.2x
 };
 
 export const YATES_TOTEM_TALISMAN_EFFECTS: TrinketEffects = {
-  moneyBonus: 120.0,        // 12000%
-  rockDamageBonus: 120.0,
-  minerSpeedBonus: 120.0,
-  minerDamageBonus: 120.0,
-  clickSpeedBonus: 120.0,
-  couponLuckBonus: 120.0,
-  bankInterestBonus: 1.17,  // +17% bank interest
+  moneyBonus: 4.0,
+  rockDamageBonus: 4.0,
+  minerSpeedBonus: 4.0,
+  minerDamageBonus: 4.0,
+  clickSpeedBonus: 4.0,
+  couponLuckBonus: 4.0,
+  bankInterestBonus: 2.5,   // +1.5 points = 2.5x
 };
+
+// Arghtfavts Trophy relic/talisman overrides (money, click, dmg, minerDmg, minerSpd)
+export const GOLDEN_TROPHY_TALISMAN_EFFECTS: TrinketEffects = {
+  moneyBonus: 2.0,
+  clickSpeedBonus: 2.0,
+  rockDamageBonus: 1.5,
+  minerDamageBonus: 1.5,
+  minerSpeedBonus: 2.0,
+};
+export const GOLDEN_TROPHY_RELIC_EFFECTS: TrinketEffects = {
+  moneyBonus: 1.5,
+  clickSpeedBonus: 1.5,
+  rockDamageBonus: 1.0,
+  minerDamageBonus: 1.0,
+  minerSpeedBonus: 1.5,
+};
+
+// Void Merchant's Pact relic/talisman overrides
+export const VOID_MERCHANT_RELIC_EFFECTS: TrinketEffects = {
+  moneyBonus: 1.15,
+  clickSpeedBonus: 1.15,
+  allBonus: 1.15,
+  bankInterestBonus: 10,
+};
+export const VOID_MERCHANT_TALISMAN_EFFECTS: TrinketEffects = {
+  moneyBonus: 1.35,
+  clickSpeedBonus: 1.35,
+  allBonus: 1.35,
+  bankInterestBonus: 10,
+};
+
+// Fortune's Gambit relic/talisman overrides
+export const FORTUNES_GAMBIT_RELIC_EFFECTS: TrinketEffects = {
+  allBonus: 0.75,
+};
+export const FORTUNES_GAMBIT_TALISMAN_EFFECTS: TrinketEffects = {
+  allBonus: 0.99,
+};
+
+/** Returns hardcoded relic/talisman override effects for special trinkets, or null if none. */
+export function getSpecialTrinketOverride(baseId: string, isRelic: boolean, isTalisman: boolean): TrinketEffects | null {
+  if (!isRelic && !isTalisman) return null;
+  const OVERRIDES: Record<string, { relic: TrinketEffects; talisman: TrinketEffects }> = {
+    yates_totem:        { relic: YATES_TOTEM_RELIC_EFFECTS,     talisman: YATES_TOTEM_TALISMAN_EFFECTS },
+    golden_trophy:      { relic: GOLDEN_TROPHY_RELIC_EFFECTS,   talisman: GOLDEN_TROPHY_TALISMAN_EFFECTS },
+    void_merchants_pact:{ relic: VOID_MERCHANT_RELIC_EFFECTS,   talisman: VOID_MERCHANT_TALISMAN_EFFECTS },
+    fortunes_gambit:    { relic: FORTUNES_GAMBIT_RELIC_EFFECTS, talisman: FORTUNES_GAMBIT_TALISMAN_EFFECTS },
+  };
+  const entry = OVERRIDES[baseId];
+  if (!entry) return null;
+  return isRelic ? entry.relic : entry.talisman;
+}
 
 // =====================
 // MINER SYSTEM
@@ -1196,6 +1303,7 @@ export interface Title {
   name: string;
   description: string;
   icon: string;
+  iconImage?: string;             // Optional image path (overrides emoji icon)
   category: 'money' | 'speed' | 'prestige' | 'secret';
   placement: 1 | 2 | 'secret';   // 1st place, 2nd place, or secret
   buffs: TitleBuffs;
@@ -1315,6 +1423,118 @@ export const TITLES: Title[] = [
       moneyBonus: 0.65,         // +65% money
     },
     nameStyle: 'diamond',
+  },
+  // Ascension tree (Heavenly upgrades)
+  {
+    id: 'bernardo_lvl',
+    name: 'Bernardo lvl',
+    description: 'Earned when you buy the final heavenly damage chip. That chip already gives +350% damage and ×2 all damage — equipping this title is flex; stats come from the tree.',
+    icon: '💪',
+    category: 'secret',
+    placement: 'secret',
+    buffs: {},
+    nameStyle: 'diamond',
+  },
+  {
+    id: 'wizard_king',
+    name: 'Wizard King',
+    description: 'Earned when you max BOTH Wizard Tower ascension paths (A cheaper + B stronger). Equipping also gives +100% all stats.',
+    icon: '🧙',
+    category: 'secret',
+    placement: 'secret',
+    buffs: { allBonus: 1.0 },
+    nameStyle: 'gold',
+  },
+  {
+    id: 'asc_money_heheh',
+    name: 'Money Heheh',
+    description: 'Earned when you buy the last money heavenly chip (includes +60% money and ×8.5 ALL money). No extra bonus when equipped — bragging rights.',
+    icon: '💸',
+    category: 'secret',
+    placement: 'secret',
+    buffs: {},
+    nameStyle: 'gold',
+  },
+  {
+    id: 'asc_click_master',
+    name: 'Click Master',
+    description: 'Earned on the final click-speed heavenly chip (+250% click, ×3.5 all click/cooldown). Equip: cosmetic only; power is already in your ascension bonuses.',
+    icon: '🖱️',
+    category: 'secret',
+    placement: 'secret',
+    buffs: {},
+    nameStyle: 'gold',
+  },
+  {
+    id: 'asc_elon_musk',
+    name: 'Elon Musk',
+    description: 'Earned on the last building heavenly chip (+250% building, ×3.5 buildings, ×2 bank interest). Equip: cosmetic; bonuses already apply passively.',
+    icon: '🚀',
+    category: 'secret',
+    placement: 'secret',
+    buffs: {},
+    nameStyle: 'gold',
+  },
+  {
+    id: 'asc_consumer_darkness',
+    name: 'Consumer of Darkness',
+    description: 'Earned on the final antimatter chip (full meter fill bonuses rolled into that purchase). Equip: cosmetic.',
+    icon: '🌑',
+    category: 'secret',
+    placement: 'secret',
+    buffs: {},
+    nameStyle: 'diamond',
+  },
+  {
+    id: 'asc_geometry_correct',
+    name: 'Geometryicoallycily Correct',
+    description: 'Earned on the final prism / Yates-meter chip. Equip: cosmetic; meter speed is from the tree.',
+    icon: '✨',
+    category: 'secret',
+    placement: 'secret',
+    buffs: {},
+    nameStyle: 'diamond',
+  },
+  {
+    id: 'asc_filthly_rich',
+    name: 'Filthly Rich',
+    description: 'Earned when you buy the last bank-interest chip (full +5% interest before multipliers). Equip: cosmetic.',
+    icon: '🏦',
+    category: 'secret',
+    placement: 'secret',
+    buffs: {},
+    nameStyle: 'gold',
+  },
+  {
+    id: 'asc_luck_born',
+    name: 'Luck Born',
+    description: 'Earned on the final luck chip (+82 luck total on that node, stacked with earlier luck chips). Equip: cosmetic — your real luck is already in Bonuses from ascension.',
+    icon: '🍀',
+    category: 'secret',
+    placement: 'secret',
+    buffs: {},
+    nameStyle: 'diamond',
+  },
+  {
+    id: 'asc_gilgamesh_treasury',
+    name: 'Gilgamesh Tresury',
+    description: 'Earned on the final drop-chance chip (+83 on that tier, stacked with the rest of the path). Equip: cosmetic.',
+    icon: '🏺',
+    iconImage: '/game/ascension/gilgamesh.png',
+    category: 'secret',
+    placement: 'secret',
+    buffs: {},
+    nameStyle: 'gold',
+  },
+  {
+    id: 'disgusting_human_being',
+    name: 'Disgusting Human Being',
+    description: 'Earned by maxing both Wandering Trader ascension paths (A and B). Equip: cosmetic.',
+    icon: '🕶️',
+    category: 'secret',
+    placement: 'secret',
+    buffs: {},
+    nameStyle: 'gold',
   },
 ];
 
@@ -1574,10 +1794,380 @@ export function shouldUnlockAchievement(achievement: Achievement, state: GameSta
 }
 
 // =====================
+// ASCENSION TREE (Heavenly Upgrade System — prestige 10+)
+// =====================
+
+export type AscensionPath = 'money' | 'damage' | 'clickSpeed' | 'building' | 'antimatter' | 'prism' | 'bank' | 'wizardA' | 'wizardB' | 'traderA' | 'traderB' | 'afkDuration' | 'afkProduction' | 'trinkets' | 'luck' | 'drops' | 'origin';
+
+export interface AscensionNode {
+  id: string;
+  name: string;
+  description: string;
+  cost: number; // Heavenly Chips
+  pathId: AscensionPath;
+  requires: string | null; // ID of prerequisite node (null = requires origin only)
+  isCapstone: boolean;
+  effects: {
+    moneyBonus?: number;
+    damageBonus?: number;
+    clickSpeedBonus?: number;
+    buildingBonus?: number;
+    antimatterFillRate?: number;
+    prismFillRate?: number;
+    bankInterest?: number;
+    wizardCostReduction?: number;
+    wizardPowerBonus?: number;
+    traderRewardBonus?: number;
+    traderCostReduction?: number;
+    afkDurationHours?: number;
+    afkProductionPercent?: number;
+    trinketBonus?: number;
+    luckBonus?: number;
+    dropChanceBonus?: number;
+    allMoneyMultiplier?: number;
+    allDamageMultiplier?: number;
+    allClickSpeedMultiplier?: number;
+    allBuildingMultiplier?: number;
+    bankInterestMultiplier?: number;
+    titleReward?: string;
+  };
+  icon?: string; // path to pixel art icon (Phase 4)
+  position: { x: number; y: number }; // position on the canvas (relative to center)
+}
+
+// Helper: optional isCapstone, optional icon (public path)
+function node(
+  id: string,
+  name: string,
+  desc: string,
+  cost: number,
+  pathId: AscensionPath,
+  requires: string | null,
+  effects: AscensionNode['effects'],
+  x: number,
+  y: number,
+  isCapstone?: boolean,
+  iconPath?: string
+): AscensionNode {
+  const cap = Boolean(isCapstone);
+  const n: AscensionNode = {
+    id,
+    name,
+    description: desc,
+    cost,
+    pathId,
+    requires,
+    isCapstone: cap,
+    effects,
+    position: { x, y },
+  };
+  if (iconPath) n.icon = iconPath;
+  return n;
+}
+
+// Node positions computed as constellation arcs radiating from center
+// Larger radius + curve spread reduces overlap on the inner rings
+function arc(baseAngle: number, index: number, radius: number = 178, curve: number = 0.035): { x: number; y: number } {
+  const angle = baseAngle + index * curve;
+  const r = radius * (index + 1);
+  return { x: Math.round(Math.cos(angle) * r), y: Math.round(Math.sin(angle) * r) };
+}
+
+export const ASCENSION_NODES: AscensionNode[] = [
+  // ORIGIN
+  node('origin', 'The Beginning', 'The first step to greatness. Unlocks all ascension paths.', 1, 'origin', null, {}, 0, 0),
+
+  // PATH 1: MONEY — arcs to upper-right (angle ~-0.5 rad, ~-30°)
+  ...[
+    ['money_1', 'A Lil Money', '+10% extra money', 5, { moneyBonus: 0.10 }],
+    ['money_2', 'Increasing', '+15% money', 8, { moneyBonus: 0.15 }],
+    ['money_3', 'Getting Richer', '+25% money', 9, { moneyBonus: 0.25 }],
+    ['money_4', 'Can Always Get More', '+30% money', 11, { moneyBonus: 0.30 }],
+    ['money_5', 'Money Moneyyy', '+35% money', 13, { moneyBonus: 0.35 }],
+    ['money_6', 'The More Money The Better', '+40% money', 15, { moneyBonus: 0.40 }],
+    ['money_7', 'Almost Riche', '+45% money', 20, { moneyBonus: 0.45 }],
+    ['money_8', 'Rich Now?', '+50% money', 22, { moneyBonus: 0.50 }],
+    ['money_9', 'Ultimatium Moneytum', '+55% money', 24, { moneyBonus: 0.55 }],
+    ['money_10', 'Golden Toilet Paper?', '+60% money', 26, { moneyBonus: 0.60, titleReward: 'asc_money_heheh' }],
+  ].map((n, i) => node(n[0] as string, n[1] as string, n[2] as string, n[3] as number, 'money', i === 0 ? 'origin' : `money_${i}`, n[4] as AscensionNode['effects'], arc(-0.5, i, 140, 0.04).x, arc(-0.5, i, 140, 0.04).y)),
+
+  // PATH 2: DAMAGE — arcs to right (angle ~0.1 rad)
+  ...[
+    ['dmg_1', 'Logan Strenght', '+30% damage', 5, { damageBonus: 0.30 }],
+    ['dmg_2', 'A Little Stronger', '+40% damage', 7, { damageBonus: 0.40 }],
+    ['dmg_3', 'Ez Logan Slimed', '+50% damage', 9, { damageBonus: 0.50 }],
+    ['dmg_4', '50 Push Ups', '+70% damage', 12, { damageBonus: 0.70 }],
+    ['dmg_5', 'Very Very Strong', '+90% damage', 16, { damageBonus: 0.90 }],
+    ['dmg_6', 'Ryan', '+120% damage', 19, { damageBonus: 1.20 }],
+    ['dmg_7', 'Too Strong', '+150% damage', 22, { damageBonus: 1.50 }],
+    ['dmg_8', 'No Need For That Much', '+200% damage', 26, { damageBonus: 2.00 }],
+    ['dmg_9', 'Yoo Chill With The Steroids', '+250% damage', 31, { damageBonus: 2.50 }],
+    ['dmg_10', 'Arnalda Schatsnagger', '+350% damage', 36, { damageBonus: 3.50, titleReward: 'bernardo_lvl' }],
+  ].map((n, i) => node(n[0] as string, n[1] as string, n[2] as string, n[3] as number, 'damage', i === 0 ? 'origin' : `dmg_${i}`, n[4] as AscensionNode['effects'], arc(0.1, i, 140, -0.02).x, arc(0.1, i, 140, -0.02).y)),
+
+  // PATH 3: CLICK SPEED — arcs to lower-right (angle ~0.7 rad)
+  ...[
+    ['click_1', '1 CpS??', '+15% click speed', 5, { clickSpeedBonus: 0.15 }],
+    ['click_2', '5 CpS??', '+25% click speed', 9, { clickSpeedBonus: 0.25 }],
+    ['click_3', '10 CpS??', '+35% click speed', 12, { clickSpeedBonus: 0.35 }],
+    ['click_4', 'Clickly Clockly', '+55% click speed', 15, { clickSpeedBonus: 0.55 }],
+    ['click_5', 'Click Click Click', '+70% click speed', 17, { clickSpeedBonus: 0.70 }],
+    ['click_6', 'Click More', '+95% click speed', 19, { clickSpeedBonus: 0.95 }],
+    ['click_7', 'Speedy Clicker', '+120% click speed', 23, { clickSpeedBonus: 1.20 }],
+    ['click_8', 'Chill Ur Mouse Gon Break', '+150% click speed', 26, { clickSpeedBonus: 1.50 }],
+    ['click_9', 'Nhewuumm', '+180% click speed', 29, { clickSpeedBonus: 1.80 }],
+    ['click_10', 'Unshackled Cursors', '+250% click speed', 33, { clickSpeedBonus: 2.50, titleReward: 'asc_click_master' }],
+  ].map((n, i) => node(n[0] as string, n[1] as string, n[2] as string, n[3] as number, 'clickSpeed', i === 0 ? 'origin' : `click_${i}`, n[4] as AscensionNode['effects'], arc(0.7, i, 140, 0.03).x, arc(0.7, i, 140, 0.03).y)),
+
+  // PATH 4: BUILDING POWER — arcs down (angle ~1.3 rad)
+  ...[
+    ['build_1', '$LA√3', '+2% building power', 2, { buildingBonus: 0.02 }],
+    ['build_2', 'Put The Fries In The Bag', '+15% building power', 9, { buildingBonus: 0.15 }],
+    ['build_3', 'Client Always Right', '+30% building power', 11, { buildingBonus: 0.30 }],
+    ['build_4', 'Keep Working', '+40% building power', 12, { buildingBonus: 0.40 }],
+    ['build_5', '30$ An Hour..Ok..', '+55% building power', 13, { buildingBonus: 0.55 }],
+    ['build_6', 'Alr Boss', '+120% building power', 26, { buildingBonus: 1.20 }],
+    ['build_7', 'Now Were Talking', '+150% building power', 27, { buildingBonus: 1.50 }],
+    ['build_8', 'Keep Em Working', '+180% building power', 29, { buildingBonus: 1.80 }],
+    ['build_9', 'Retired', '+220% building power', 33, { buildingBonus: 2.20 }],
+    ['build_10', 'Wippety Woppity', '+250% building power', 35, { buildingBonus: 2.50, titleReward: 'asc_elon_musk' }],
+  ].map((n, i) => node(n[0] as string, n[1] as string, n[2] as string, n[3] as number, 'building', i === 0 ? 'origin' : `build_${i}`, n[4] as AscensionNode['effects'], arc(1.3, i, 140, -0.03).x, arc(1.3, i, 140, -0.03).y)),
+
+  // PATH 5: ANTIMATTER — arcs upper-left (angle ~-2.3 rad, DARK ONLY)
+  ...[
+    ['anti_1', 'Dark-', '+15% antimatter fill rate', 8, { antimatterFillRate: 0.15 }],
+    ['anti_2', '-Ness', '+35% antimatter fill rate', 14, { antimatterFillRate: 0.35 }],
+    ['anti_3', "I'm Batman", '+60% antimatter fill rate', 20, { antimatterFillRate: 0.60 }],
+    ['anti_4', 'I Live In The Shadows', '+90% antimatter fill rate', 25, { antimatterFillRate: 0.90 }],
+    ['anti_5', 'Atomic', '+166% antimatter fill rate', 45, { antimatterFillRate: 1.66, titleReward: 'asc_consumer_darkness' }],
+  ].map((n, i) => node(n[0] as string, n[1] as string, n[2] as string, n[3] as number, 'antimatter', i === 0 ? 'origin' : `anti_${i}`, n[4] as AscensionNode['effects'], arc(-2.3, i, 175, 0.05).x, arc(-2.3, i, 175, 0.05).y)),
+
+  // PATH 6: PRISM — arcs left (angle ~-3.0 rad, LIGHT ONLY)
+  ...[
+    ['prism_1', 'Reflaction', '+15% Yates meter fill rate', 8, { prismFillRate: 0.15 }],
+    ['prism_2', 'Bandy', '+35% Yates meter fill rate', 14, { prismFillRate: 0.35 }],
+    ['prism_3', 'Light + Light = Ligheter', '+60% Yates meter fill rate', 20, { prismFillRate: 0.60 }],
+    ['prism_4', 'Dabura', '+90% Yates meter fill rate', 25, { prismFillRate: 0.90 }],
+    ['prism_5', 'KA-tchin thicn tchin!', '+166% Yates meter fill rate', 45, { prismFillRate: 1.66, titleReward: 'asc_geometry_correct' }],
+  ].map((n, i) => node(n[0] as string, n[1] as string, n[2] as string, n[3] as number, 'prism', i === 0 ? 'origin' : `prism_${i}`, n[4] as AscensionNode['effects'], arc(-3.0, i, 175, -0.04).x, arc(-3.0, i, 175, -0.04).y)),
+
+  // PATH 7: BANK — arcs lower-left (angle ~2.4 rad)
+  node('bank_1', '100 Credit score??', '+0.2% bank interest rate', 10, 'bank', 'origin', { bankInterest: 0.002 }, arc(2.5, 0, 172).x, arc(2.5, 0, 172).y),
+  node('bank_2', '500 Alr', '+0.3% bank interest rate', 25, 'bank', 'bank_1', { bankInterest: 0.003 }, arc(2.5, 1, 172).x, arc(2.5, 1, 172).y),
+  node('bank_3', '755 Now Were Talking', '+0.7% bank interest rate', 30, 'bank', 'bank_2', { bankInterest: 0.007 }, arc(2.5, 2, 172).x, arc(2.5, 2, 172).y),
+  node('bank_4', 'Here\'s $500k', '+1% bank interest rate', 45, 'bank', 'bank_3', { bankInterest: 0.01 }, arc(2.5, 3, 172).x, arc(2.5, 3, 172).y),
+  node('bank_5', '(yk what? just take whatever :)', '+1.5% bank interest rate', 55, 'bank', 'bank_4', { bankInterest: 0.015, titleReward: 'asc_filthly_rich' }, arc(2.5, 4, 172).x, arc(2.5, 4, 172).y, true),
+
+  // PATH 8A: WIZARD CHEAPER — arcs down-left (angle ~2.0 rad, DARK)
+  node('wizA_1', 'Aluackbuarbom', '-5% wizard tower costs', 6, 'wizardA', 'origin', { wizardCostReduction: 0.05 }, arc(1.9, 0, 168, 0.045).x, arc(1.9, 0, 168, 0.045).y),
+  node('wizA_2', 'Wathcigau', '-10% wizard tower costs', 10, 'wizardA', 'wizA_1', { wizardCostReduction: 0.10 }, arc(1.9, 1, 168, 0.045).x, arc(1.9, 1, 168, 0.045).y),
+  node('wizA_3', 'Wizard Noob', '-15% wizard tower costs', 16, 'wizardA', 'wizA_2', { wizardCostReduction: 0.15 }, arc(1.9, 2, 168, 0.045).x, arc(1.9, 2, 168, 0.045).y),
+  node('wizA_4', 'Wizard Pro', '-20% wizard tower costs', 22, 'wizardA', 'wizA_3', { wizardCostReduction: 0.20 }, arc(1.9, 3, 168, 0.045).x, arc(1.9, 3, 168, 0.045).y),
+  node('wizA_5', 'Wizard Hacker', '-25% wizard tower costs', 28, 'wizardA', 'wizA_4', { wizardCostReduction: 0.25 }, arc(1.9, 4, 168, 0.045).x, arc(1.9, 4, 168, 0.045).y),
+  node('wizA_6', 'Wizard Of OZ', '-35% wizard tower costs', 33, 'wizardA', 'wizA_5', { wizardCostReduction: 0.35 }, arc(1.9, 5, 168, 0.045).x, arc(1.9, 5, 168, 0.045).y),
+
+  // PATH 8B: WIZARD STRONGER (angle ~1.75 rad, DARK)
+  node('wizB_1', 'Logan Strenght 2.o', '+2% ritual power', 3, 'wizardB', 'origin', { wizardPowerBonus: 0.02 }, arc(2.2, 0, 174, 0.038).x, arc(2.2, 0, 174, 0.038).y),
+  node('wizB_2', 'Stronger Than Logan', '+4% ritual power', 7, 'wizardB', 'wizB_1', { wizardPowerBonus: 0.04 }, arc(2.2, 1, 174, 0.038).x, arc(2.2, 1, 174, 0.038).y),
+  node('wizB_3', 'Magicaulyus Maximus', '+10% ritual power', 14, 'wizardB', 'wizB_2', { wizardPowerBonus: 0.10 }, arc(2.2, 2, 174, 0.038).x, arc(2.2, 2, 174, 0.038).y),
+  node('wizB_4', 'Washabungus Binliugngus', '+15% ritual power', 19, 'wizardB', 'wizB_3', { wizardPowerBonus: 0.15 }, arc(2.2, 3, 174, 0.038).x, arc(2.2, 3, 174, 0.038).y),
+  node('wizB_5', 'Vintroclumus Latringus', '+25% ritual power', 28, 'wizardB', 'wizB_4', { wizardPowerBonus: 0.25 }, arc(2.2, 4, 174, 0.038).x, arc(2.2, 4, 174, 0.038).y),
+  node('wizB_6', 'Abra Cadabra', '+30% ritual power', 33, 'wizardB', 'wizB_5', { wizardPowerBonus: 0.30 }, arc(2.2, 5, 174, 0.038).x, arc(2.2, 5, 174, 0.038).y, true),
+
+  // PATH 9A: TRADER STRONGER (angle ~-1.55 rad, DARK)
+  node('traderA_1', 'Bum', '+5% trader rewards', 3, 'traderA', 'origin', { traderRewardBonus: 0.05 }, arc(-1.55, 0, 172, 0.028).x, arc(-1.55, 0, 172, 0.028).y),
+  node('traderA_2', 'Why u buying ts?', '+10% trader rewards', 9, 'traderA', 'traderA_1', { traderRewardBonus: 0.10 }, arc(-1.55, 1, 172, 0.028).x, arc(-1.55, 1, 172, 0.028).y),
+  node('traderA_3', 'Wondering..', '+15% trader rewards', 13, 'traderA', 'traderA_2', { traderRewardBonus: 0.15 }, arc(-1.55, 2, 172, 0.028).x, arc(-1.55, 2, 172, 0.028).y),
+  node('traderA_4', '15$ For A Slice Of Bread', '+20% trader rewards', 19, 'traderA', 'traderA_3', { traderRewardBonus: 0.20 }, arc(-1.55, 3, 172, 0.028).x, arc(-1.55, 3, 172, 0.028).y),
+  node('traderA_5', 'The Hated', '+25% trader rewards', 25, 'traderA', 'traderA_4', { traderRewardBonus: 0.25 }, arc(-1.55, 4, 172, 0.028).x, arc(-1.55, 4, 172, 0.028).y),
+
+  // PATH 9B: TRADER CHEAPER (angle ~-1.22 rad, DARK)
+  node('traderB_1', 'Cheap Cheap', '-10% trader prices', 9, 'traderB', 'origin', { traderCostReduction: 0.10 }, arc(-1.22, 0, 172, -0.028).x, arc(-1.22, 0, 172, -0.028).y),
+  node('traderB_2', 'Jouel Jouel', '-15% trader prices', 15, 'traderB', 'traderB_1', { traderCostReduction: 0.15 }, arc(-1.22, 1, 172, -0.028).x, arc(-1.22, 1, 172, -0.028).y),
+  node('traderB_3', 'Cannot Be Ts Homeless', '-20% trader prices', 25, 'traderB', 'traderB_2', { traderCostReduction: 0.20 }, arc(-1.22, 2, 172, -0.028).x, arc(-1.22, 2, 172, -0.028).y),
+  node('traderB_4', 'Discoutus Masicmos', '-25% trader prices', 33, 'traderB', 'traderB_3', { traderCostReduction: 0.25 }, arc(-1.22, 3, 172, -0.028).x, arc(-1.22, 3, 172, -0.028).y),
+
+  // PATH 10A: AFK DURATION — demon lords (full $/s offline cap). Order: new.md
+  node('afkA_1', 'Satan', '1 hour — earn like you were online', 7, 'afkDuration', 'origin', { afkDurationHours: 1 }, arc(1.55, 0, 182, 0.02).x, arc(1.55, 0, 182, 0.02).y, false, '/game/ascension/satan.png'),
+  node('afkA_2', 'Asmodeus', '4 hours — earn like you were online', 49, 'afkDuration', 'afkA_1', { afkDurationHours: 4 }, arc(1.55, 1, 182, 0.02).x, arc(1.55, 1, 182, 0.02).y, false, '/game/ascension/asmodeus.png'),
+  node('afkA_3', 'Beelzebub', '8 hours — earn like you were online', 320, 'afkDuration', 'afkA_2', { afkDurationHours: 8 }, arc(1.55, 2, 182, 0.02).x, arc(1.55, 2, 182, 0.02).y, false, '/game/ascension/beelzebub.png'),
+  node('afkA_4', 'Lucifer', '16 hours — earn like you were online', 800, 'afkDuration', 'afkA_3', { afkDurationHours: 16 }, arc(1.55, 3, 182, 0.02).x, arc(1.55, 3, 182, 0.02).y, false, '/game/ascension/lucifer.png'),
+  node('afkA_5', 'Chimera', '1 day — earn like you were online', 1000, 'afkDuration', 'afkA_4', { afkDurationHours: 24 }, arc(1.55, 4, 182, 0.02).x, arc(1.55, 4, 182, 0.02).y, true, '/game/ascension/chimera.png'),
+
+  // PATH 10B: AFK PRODUCTION — celestial choir (% of $/s while offline)
+  node('afkB_1', 'Dominions', '25% of normal $/s while offline (+10% offline production)', 12, 'afkProduction', 'origin', { afkProductionPercent: 0.25 }, arc(0.95, 0, 172, -0.018).x, arc(0.95, 0, 172, -0.018).y, false, '/game/ascension/dominions.png'),
+  node('afkB_2', 'Cherubim', '45% of normal $/s while offline', 35, 'afkProduction', 'afkB_1', { afkProductionPercent: 0.45 }, arc(0.95, 1, 172, -0.018).x, arc(0.95, 1, 172, -0.018).y, false, '/game/ascension/cherubim.png'),
+  node('afkB_3', 'Seraphim', '65% of normal $/s while offline', 90, 'afkProduction', 'afkB_2', { afkProductionPercent: 0.65 }, arc(0.95, 2, 172, -0.018).x, arc(0.95, 2, 172, -0.018).y, false, '/game/ascension/seraphim.png'),
+  node('afkB_4', 'God', '75% of normal $/s while offline (like the cookie example)', 200, 'afkProduction', 'afkB_3', { afkProductionPercent: 0.75 }, arc(0.95, 3, 172, -0.018).x, arc(0.95, 3, 172, -0.018).y, true, '/game/ascension/god.png'),
+
+  // PATH 11: TRINKETS
+  node('trinket_a1', 'Firs Time Collector', '+20% trinket effects', 9, 'trinkets', 'origin', { trinketBonus: 0.20 }, arc(-0.9, 0, 158).x, arc(-0.9, 0, 158).y),
+  node('trinket_a2', 'Divine Enchatment', '+50% trinket effects', 13, 'trinkets', 'trinket_a1', { trinketBonus: 0.50 }, arc(-0.9, 1, 158).x, arc(-0.9, 1, 158).y),
+  node('trinket_a3', 'Queen Victoria', '+100% trinket effects', 15, 'trinkets', 'trinket_a2', { trinketBonus: 1.0 }, arc(-0.9, 2, 158).x, arc(-0.9, 2, 158).y),
+  node('trinket_a4', 'Eternal Infusion', '+150% trinket effects', 18, 'trinkets', 'trinket_a3', { trinketBonus: 1.5 }, arc(-0.9, 3, 158).x, arc(-0.9, 3, 158).y),
+  node('trinket_a5', 'Arcane Empowrement', '+250% trinket effects', 29, 'trinkets', 'trinket_a4', { trinketBonus: 2.5 }, arc(-0.9, 4, 158).x, arc(-0.9, 4, 158).y, true),
+
+  // PATH 12: LUCK
+  node('luck_1', 'Asta', '+0.5 luck', 9, 'luck', 'origin', { luckBonus: 0.5 }, arc(-2.7, 0, 152).x, arc(-2.7, 0, 152).y, false, '/game/ascension/asta.png'),
+  node('luck_2', 'Lucky Clover', '+1.5 luck', 15, 'luck', 'luck_1', { luckBonus: 1.5 }, arc(-2.7, 1, 152).x, arc(-2.7, 1, 152).y),
+  node('luck_3', 'King Julious', '+2.5 luck', 19, 'luck', 'luck_2', { luckBonus: 2.5 }, arc(-2.7, 2, 152).x, arc(-2.7, 2, 152).y, false, '/game/ascension/king_julius.png'),
+  node('luck_4', 'Arthur The Great', '+4 luck', 22, 'luck', 'luck_3', { luckBonus: 4 }, arc(-2.7, 3, 152).x, arc(-2.7, 3, 152).y),
+  node('luck_5', 'Luckyest One', '+7 luck', 27, 'luck', 'luck_4', { luckBonus: 7 }, arc(-2.7, 4, 152).x, arc(-2.7, 4, 152).y),
+  node('luck_6', 'Blessed Odds', '+4 luck', 45, 'luck', 'luck_5', { luckBonus: 4 }, arc(-2.7, 5, 152).x, arc(-2.7, 5, 152).y),
+  node('luck_7', 'Yuno', '+7 luck', 75, 'luck', 'luck_6', { luckBonus: 7, titleReward: 'asc_luck_born' }, arc(-2.7, 6, 152).x, arc(-2.7, 6, 152).y, true, '/game/ascension/yuno.png'),
+
+  // PATH 13: DROP CHANCE
+  node('drop_1', 'Tresure Seeker', '+0.5 drop chance', 9, 'drops', 'origin', { dropChanceBonus: 0.5 }, arc(-0.15, 0, 152).x, arc(-0.15, 0, 152).y),
+  node('drop_2', 'Tresure Overflow', '+1.5 drop chance', 13, 'drops', 'drop_1', { dropChanceBonus: 1.5 }, arc(-0.15, 1, 152).x, arc(-0.15, 1, 152).y),
+  node('drop_3', 'Jouel Sense', '+3 drop chance', 18, 'drops', 'drop_2', { dropChanceBonus: 3 }, arc(-0.15, 2, 152).x, arc(-0.15, 2, 152).y),
+  node('drop_4', 'Divine Chances', '+7 drop chance', 22, 'drops', 'drop_3', { dropChanceBonus: 7 }, arc(-0.15, 3, 152).x, arc(-0.15, 3, 152).y),
+  node('drop_5', "Rimuru's Blessing", '+2 drop chance', 44, 'drops', 'drop_4', { dropChanceBonus: 2 }, arc(-0.15, 4, 152).x, arc(-0.15, 4, 152).y, false, '/game/ascension/rimuru.png'),
+  node('drop_6', "Chorollo's Fortune", '+4 drop chance', 65, 'drops', 'drop_5', { dropChanceBonus: 4 }, arc(-0.15, 5, 152).x, arc(-0.15, 5, 152).y, false, '/game/ascension/chorollo.png'),
+  node('drop_7', 'Hakari Jackpot', '+8 drop chance', 110, 'drops', 'drop_6', { dropChanceBonus: 8, titleReward: 'asc_gilgamesh_treasury' }, arc(-0.15, 6, 152).x, arc(-0.15, 6, 152).y, true, '/game/ascension/hakari.png'),
+];
+
+/** Old “cap” node IDs merged into the last chip per branch — migrate saves from two-step caps */
+const ASCENSION_CAP_NODE_MIGRATION: Record<string, string> = {
+  money_cap: 'money_10',
+  dmg_cap: 'dmg_10',
+  click_cap: 'click_10',
+  build_cap: 'build_10',
+  anti_cap: 'anti_5',
+  prism_cap: 'prism_5',
+  bank_cap: 'bank_5',
+  wiz_cap: 'wizB_6',
+  luck_cap: 'luck_7',
+  drop_cap: 'drop_7',
+};
+
+/** Paths that require BOTH sub-paths completed before granting a title automatically */
+export const COMBINED_PATH_TITLES: { titleId: string; requires: [string, string] }[] = [
+  { titleId: 'wizard_king',            requires: ['wizA_6', 'wizB_6'] },
+  { titleId: 'disgusting_human_being', requires: ['traderA_5', 'traderB_4'] },
+];
+
+export function migrateOwnedAscensionNodeIds(ids: string[] | undefined): string[] {
+  const set = new Set(ids || []);
+  for (const [deprecated, replacement] of Object.entries(ASCENSION_CAP_NODE_MIGRATION)) {
+    if (set.has(deprecated)) {
+      set.delete(deprecated);
+      set.add(replacement);
+    }
+  }
+  return [...set];
+}
+
+/** Human-readable equip buff lines for the Titles UI */
+export function summarizeTitleBuffLines(title: Title): string[] {
+  const b = title.buffs;
+  const lines: string[] = [];
+  if (b.moneyBonus) lines.push(`+${Math.round(b.moneyBonus * 100)}% money`);
+  if (b.allBonus) lines.push(`+${Math.round(b.allBonus * 100)}% all stats`);
+  if (b.speedBonus) lines.push(`+${Math.round(b.speedBonus * 100)}% speed`);
+  if (b.pcxDiscount) lines.push(`−${Math.round(b.pcxDiscount * 100)}% pickaxe cost`);
+  if (b.prestigeMoneyRetention) lines.push(`+${Math.round(b.prestigeMoneyRetention * 100)}% money kept on prestige`);
+  if (b.minerSpeedBonus) lines.push(`+${Math.round(b.minerSpeedBonus * 100)}% miner speed`);
+  if (b.minerDamageBonus) lines.push(`+${Math.round(b.minerDamageBonus * 100)}% miner damage`);
+  if (b.pcxDamageBonus) lines.push(`+${Math.round(b.pcxDamageBonus * 100)}% pickaxe damage`);
+  return lines;
+}
+
+/** Effect phrases for one ascension node (matches AscensionTree tooltip, excludes title unlock). */
+export function summarizeAscensionNodeEffects(e: AscensionNode['effects']): string[] {
+  const p: string[] = [];
+  if (e.moneyBonus) p.push(`+${Math.round(e.moneyBonus * 100)}% money`);
+  if (e.damageBonus) p.push(`+${Math.round(e.damageBonus * 100)}% damage`);
+  if (e.clickSpeedBonus) p.push(`+${Math.round(e.clickSpeedBonus * 100)}% click speed`);
+  if (e.buildingBonus) p.push(`+${Math.round(e.buildingBonus * 100)}% building power`);
+  if (e.antimatterFillRate) p.push(`+${Math.round(e.antimatterFillRate * 100)}% antimatter fill`);
+  if (e.prismFillRate) p.push(`+${Math.round(e.prismFillRate * 100)}% Yates meter fill`);
+  if (e.bankInterest) p.push(`+${(e.bankInterest * 100).toFixed(2)}% bank interest`);
+  if (e.wizardCostReduction) p.push(`−${Math.round(e.wizardCostReduction * 100)}% wizard costs`);
+  if (e.wizardPowerBonus) p.push(`+${Math.round(e.wizardPowerBonus * 100)}% ritual power`);
+  if (e.traderRewardBonus) p.push(`+${Math.round(e.traderRewardBonus * 100)}% trader rewards`);
+  if (e.traderCostReduction) p.push(`−${Math.round(e.traderCostReduction * 100)}% trader prices`);
+  if (e.afkDurationHours) p.push(`${e.afkDurationHours}h offline earnings cap`);
+  if (e.afkProductionPercent) p.push(`${Math.round(e.afkProductionPercent * 100)}% offline $/s`);
+  if (e.trinketBonus) p.push(`+${Math.round(e.trinketBonus * 100)}% trinket effects`);
+  if (e.luckBonus) p.push(`+${e.luckBonus} luck`);
+  if (e.dropChanceBonus) p.push(`+${e.dropChanceBonus} drop chance`);
+  if (e.allMoneyMultiplier && e.allMoneyMultiplier > 1) p.push(`${e.allMoneyMultiplier}× all money`);
+  if (e.allDamageMultiplier && e.allDamageMultiplier > 1) p.push(`${e.allDamageMultiplier}× all damage`);
+  if (e.allClickSpeedMultiplier && e.allClickSpeedMultiplier > 1) p.push(`${e.allClickSpeedMultiplier}× all click speed`);
+  if (e.allBuildingMultiplier && e.allBuildingMultiplier > 1) p.push(`${e.allBuildingMultiplier}× all buildings`);
+  if (e.bankInterestMultiplier && e.bankInterestMultiplier > 1) p.push(`${e.bankInterestMultiplier}× bank interest`);
+  return p;
+}
+
+/** Lines describing what the heavenly upgrade that grants this title does (passive tree bonus). */
+export function getTitleAscensionUnlockLines(titleId: string): string[] {
+  const node = ASCENSION_NODES.find((n) => n.effects.titleReward === titleId);
+  if (!node) return [];
+  return summarizeAscensionNodeEffects(node.effects);
+}
+
+/** Aggregated ascension effects for owned node IDs — single source for GameContext + mine tick */
+export function sumAscensionEffects(ownedIds: string[]) {
+  const bonuses = {
+    moneyBonus: 0,
+    damageBonus: 0,
+    clickSpeedBonus: 0,
+    buildingBonus: 0,
+    bankInterest: 0,
+    trinketBonus: 0,
+    luckBonus: 0,
+    dropChanceBonus: 0,
+    antimatterFillRate: 0,
+    prismFillRate: 0,
+    wizardCostReduction: 0,
+    wizardPowerBonus: 0,
+    traderRewardBonus: 0,
+    traderCostReduction: 0,
+    afkDurationHours: 0,
+    afkProductionPercent: 0,
+    allMoneyMultiplier: 1,
+    allDamageMultiplier: 1,
+    allClickSpeedMultiplier: 1,
+    allBuildingMultiplier: 1,
+    bankInterestMultiplier: 1,
+  };
+
+  for (const nodeId of ownedIds || []) {
+    const node = ASCENSION_NODES.find(n => n.id === nodeId);
+    if (!node) continue;
+    const e = node.effects;
+
+    if (e.moneyBonus) bonuses.moneyBonus += e.moneyBonus;
+    if (e.damageBonus) bonuses.damageBonus += e.damageBonus;
+    if (e.clickSpeedBonus) bonuses.clickSpeedBonus += e.clickSpeedBonus;
+    if (e.buildingBonus) bonuses.buildingBonus += e.buildingBonus;
+    if (e.bankInterest) bonuses.bankInterest += e.bankInterest;
+    if (e.trinketBonus) bonuses.trinketBonus += e.trinketBonus;
+    if (e.luckBonus) bonuses.luckBonus += e.luckBonus;
+    if (e.dropChanceBonus) bonuses.dropChanceBonus += e.dropChanceBonus;
+    if (e.antimatterFillRate) bonuses.antimatterFillRate += e.antimatterFillRate;
+    if (e.prismFillRate) bonuses.prismFillRate += e.prismFillRate;
+    if (e.wizardCostReduction) bonuses.wizardCostReduction += e.wizardCostReduction;
+    if (e.wizardPowerBonus) bonuses.wizardPowerBonus += e.wizardPowerBonus;
+    if (e.traderRewardBonus) bonuses.traderRewardBonus += e.traderRewardBonus;
+    if (e.traderCostReduction) bonuses.traderCostReduction += e.traderCostReduction;
+    if (e.afkDurationHours) bonuses.afkDurationHours = Math.max(bonuses.afkDurationHours, e.afkDurationHours);
+    if (e.afkProductionPercent) bonuses.afkProductionPercent = Math.max(bonuses.afkProductionPercent, e.afkProductionPercent);
+    if (e.allMoneyMultiplier) bonuses.allMoneyMultiplier *= e.allMoneyMultiplier;
+    if (e.allDamageMultiplier) bonuses.allDamageMultiplier *= e.allDamageMultiplier;
+    if (e.allClickSpeedMultiplier) bonuses.allClickSpeedMultiplier *= e.allClickSpeedMultiplier;
+    if (e.allBuildingMultiplier) bonuses.allBuildingMultiplier *= e.allBuildingMultiplier;
+    if (e.bankInterestMultiplier) bonuses.bankInterestMultiplier *= e.bankInterestMultiplier;
+  }
+
+  return bonuses;
+}
+
+// =====================
 // BUILDING SYSTEM
 // =====================
 
-export type BuildingType = 'mine' | 'bank' | 'factory' | 'temple' | 'wizard_tower' | 'shipment';
+export type BuildingType = 'mine' | 'bank' | 'factory' | 'temple' | 'wizard_tower' | 'shipment' | 'gem_farm' | 'alchemy_lab' | 'time_machine' | 'antimatter_condenser' | 'prism' | 'chancemaker' | 'fractal_engine';
 
 export interface Building {
   id: BuildingType;
@@ -1603,6 +2193,7 @@ export interface BankState {
   depositTimestamp: number | null; // When deposit was made
   lastInterestClaim: number | null; // When interest was last claimed
   bankTier: number; // 0-11, controls max deposit cap
+  bankActiveMinutes: number; // Cumulative minutes the tab was open while deposit exists
 }
 
 // Factory: +10 miners each, random buffs
@@ -1665,6 +2256,53 @@ export interface ShipmentState {
   totalDeliveries: number;
 }
 
+// Gem Farm: grows gems passively, 1 gem = 500$, 1 gem/min
+export interface GemFarmState {
+  count: number;
+  totalGemsHarvested: number;
+  lastGemTime: number;
+}
+
+// Alchemy Lab: every 100 clicks → +5% money bonus for 5 sec (stacks)
+export interface AlchemyLabState {
+  count: number;
+  clicksSinceLastProc: number;
+}
+
+// Time Machine: temporal tax — collects % of other players' earnings
+export interface TimeMachineState {
+  count: number;
+  totalTaxCollected: number;
+}
+
+// Antimatter Condenser (Dark only): antimatter meter → massive buffs at 100%
+export interface AntimatterCondenserState {
+  owned: boolean;
+  antimatterPercent: number;
+  lastResetTime: number;
+  villainTitleUnlocked: boolean;
+}
+
+// Prism (Light only): Yates meter → 2x all stats at 100%
+export interface PrismState {
+  owned: boolean;
+  yatesMeterPercent: number;
+  lastResetTime: number;
+  blessedTitleUnlocked: boolean;
+}
+
+// Chancemaker: random buffs per building
+export interface ChancemakerState {
+  count: number;
+  lastCheckTime: number;
+}
+
+// Fractal Engine: generates base $/sec scaled by buildings & pickaxes
+export interface FractalEngineState {
+  count: number;
+  totalGenerated: number;
+}
+
 // Combined building state
 export interface BuildingStates {
   mine: MineState;
@@ -1673,6 +2311,13 @@ export interface BuildingStates {
   temple: TempleState;
   wizard_tower: WizardTowerState;
   shipment: ShipmentState;
+  gem_farm: GemFarmState;
+  alchemy_lab: AlchemyLabState;
+  time_machine: TimeMachineState;
+  antimatter_condenser: AntimatterCondenserState;
+  prism: PrismState;
+  chancemaker: ChancemakerState;
+  fractal_engine: FractalEngineState;
 }
 
 // =====================
@@ -1694,7 +2339,9 @@ export type BuffSource =
   | 'wizard' 
   | 'powerup' 
   | 'event' 
-  | 'goldenCookie';
+  | 'goldenCookie'
+  | 'shadySam'
+  | 'chancemaker';
 
 export interface ActiveBuff {
   id: string;
@@ -1804,13 +2451,34 @@ export interface ActivePowerup {
 // =====================
 
 export const BUILDINGS: Building[] = [
+  // Cookie Clicker order: Farm, Mine, Factory, Bank, Temple, Wizard Tower, Shipment, Alchemy Lab, Time Machine, Antimatter Condenser, Prism, Chancemaker, Fractal Engine
+  {
+    id: 'gem_farm',
+    name: 'Gem Farm',
+    description: 'Grows gems passively. 1 gem = $500, 1 gem per minute per farm.',
+    image: '/game/buildings/gemfarm.png',
+    baseCost: 7000000, // 7M
+    costMultiplier: 1.5,
+    maxCount: -1,
+    pathRestriction: null,
+  },
   {
     id: 'mine',
     name: 'Mine',
     description: 'Each mine = 10 miners at 2x efficiency (20 miner-equivalents of passive income). Special: With Temple Rank 2/3, generates 20% of click money every 0.5s instead.',
     image: '/game/buildings/mine.png',
-    baseCost: 500000000000, // 500B
+    baseCost: 200000000, // 200M
     costMultiplier: 1.8,
+    maxCount: -1,
+    pathRestriction: null,
+  },
+  {
+    id: 'factory',
+    name: 'Factory',
+    description: 'Each factory provides +10 bonus miners and generates random pickaxe buffs.',
+    image: '/game/buildings/factory.png',
+    baseCost: 1500000000, // 1.5B
+    costMultiplier: 1.6,
     maxCount: -1,
     pathRestriction: null,
   },
@@ -1825,21 +2493,11 @@ export const BUILDINGS: Building[] = [
     pathRestriction: null,
   },
   {
-    id: 'factory',
-    name: 'Factory',
-    description: 'Each factory provides +10 bonus miners and generates random pickaxe buffs.',
-    image: '/game/buildings/factory.png',
-    baseCost: 1000000000000, // 1T
-    costMultiplier: 1.6,
-    maxCount: -1,
-    pathRestriction: null,
-  },
-  {
     id: 'temple',
     name: 'Temple',
     description: 'Light path only. Miners generate 1.5x money. Unlock permanent upgrades with 3 ranks.',
     image: '/game/buildings/temple.png',
-    baseCost: 10000000000000, // 10T
+    baseCost: 500000000000, // 500B
     costMultiplier: 1,
     maxCount: 1,
     pathRestriction: 'light',
@@ -1849,7 +2507,7 @@ export const BUILDINGS: Building[] = [
     name: 'Wizard Tower',
     description: 'Darkness path only. Summon shadow miners and perform dark rituals for mega buffs.',
     image: '/game/buildings/wizard_tower.png',
-    baseCost: 10000000000000, // 10T
+    baseCost: 550000000000, // 550B
     costMultiplier: 1,
     maxCount: 1,
     pathRestriction: 'darkness',
@@ -1859,7 +2517,67 @@ export const BUILDINGS: Building[] = [
     name: 'Shipment',
     description: 'Import rare ores from other dimensions. Deliveries take time but bring exotic rewards!',
     image: '/game/buildings/shipment.png',
-    baseCost: 50000000000000, // 50T
+    baseCost: 1250000000000, // 1.25T
+    costMultiplier: 5.0,
+    maxCount: 5,
+    pathRestriction: null,
+  },
+  {
+    id: 'alchemy_lab',
+    name: 'Alchemy Lab',
+    description: 'Every 100 clicks, grants +5% money bonus for 5 seconds. Stacks!',
+    image: '/game/buildings/alchemylab.png',
+    baseCost: 5400000000000, // 5.4T
+    costMultiplier: 1.8,
+    maxCount: -1,
+    pathRestriction: null,
+  },
+  {
+    id: 'time_machine',
+    name: 'Time Machine',
+    description: 'Temporal Tax: passively collects 0.1% of other players\' earnings per minute.',
+    image: '/game/buildings/timemachine.png',
+    baseCost: 21000000000000, // 21T
+    costMultiplier: 2.0,
+    maxCount: -1,
+    pathRestriction: null,
+  },
+  {
+    id: 'antimatter_condenser',
+    name: 'Antimatter Condenser',
+    description: 'Darkness only. Fill the antimatter meter to 100% for massive buffs and "The Villain" title!',
+    image: '/game/buildings/antimatter_condenser.png',
+    baseCost: 62000000000000, // 62T
+    costMultiplier: 1,
+    maxCount: 1,
+    pathRestriction: 'darkness',
+  },
+  {
+    id: 'prism',
+    name: 'Prism',
+    description: 'Light only. Fill the Yates meter to 100% for +2x all stats and 10x bank interest!',
+    image: '/game/buildings/prism.png',
+    baseCost: 62000000000000, // 62T
+    costMultiplier: 1,
+    maxCount: 1,
+    pathRestriction: 'light',
+  },
+  {
+    id: 'chancemaker',
+    name: 'Chancemaker',
+    description: 'Every 20 seconds per building: 5.5% chance for a random buff lasting 20s-5min.',
+    image: '/game/buildings/chancemaker.png',
+    baseCost: 45000000000000, // 45T
+    costMultiplier: 2.0,
+    maxCount: -1,
+    pathRestriction: null,
+  },
+  {
+    id: 'fractal_engine',
+    name: 'Fractal Engine',
+    description: 'Generates 15B$/sec base. +1% per building, +0.5% per pickaxe owned.',
+    image: '/game/buildings/fractalengine.png',
+    baseCost: 99999999999999, // 99T999B999M999K999
     costMultiplier: 2.5,
     maxCount: -1,
     pathRestriction: null,
@@ -1879,7 +2597,7 @@ export const BANK_TIME_MULTIPLIER = 0.0001; // Interest increases with time
 
 // Bank Loan constants
 export const LOAN_MAX_AMOUNT = 1e21; // Max loan: 1 Sextillion
-export const LOAN_DAILY_INTEREST_RATE = 0.25; // 25% compound interest per IRL day
+export const LOAN_DAILY_INTEREST_RATE = 4.50; // 450% compound interest per IRL day
 export const LOAN_OPEN_TAB_BONUS_RATE = 0.05; // 5% interest reduction per hour while game tab open
 export const LOAN_AUTO_REPAY_THRESHOLD = 2; // If debt >= 2x current money, auto-route earnings to debt
 
@@ -2157,6 +2875,7 @@ export function getDefaultBuildingStates(): BuildingStates {
       depositTimestamp: null,
       lastInterestClaim: null,
       bankTier: 0,
+      bankActiveMinutes: 0,
     },
     factory: {
       count: 0,
@@ -2193,6 +2912,39 @@ export function getDefaultBuildingStates(): BuildingStates {
       count: 0,
       pendingDeliveries: [],
       totalDeliveries: 0,
+    },
+    gem_farm: {
+      count: 0,
+      totalGemsHarvested: 0,
+      lastGemTime: Date.now(),
+    },
+    alchemy_lab: {
+      count: 0,
+      clicksSinceLastProc: 0,
+    },
+    time_machine: {
+      count: 0,
+      totalTaxCollected: 0,
+    },
+    antimatter_condenser: {
+      owned: false,
+      antimatterPercent: 0,
+      lastResetTime: 0,
+      villainTitleUnlocked: false,
+    },
+    prism: {
+      owned: false,
+      yatesMeterPercent: 0,
+      lastResetTime: 0,
+      blessedTitleUnlocked: false,
+    },
+    chancemaker: {
+      count: 0,
+      lastCheckTime: Date.now(),
+    },
+    fractal_engine: {
+      count: 0,
+      totalGenerated: 0,
     },
   };
 }
@@ -2254,6 +3006,13 @@ export function getBuildingCount(buildingId: BuildingType, state: GameState): nu
     case 'temple': return state.buildings.temple.owned ? 1 : 0;
     case 'wizard_tower': return state.buildings.wizard_tower.owned ? 1 : 0;
     case 'shipment': return state.buildings.shipment.count;
+    case 'gem_farm': return state.buildings.gem_farm?.count || 0;
+    case 'alchemy_lab': return state.buildings.alchemy_lab?.count || 0;
+    case 'time_machine': return state.buildings.time_machine?.count || 0;
+    case 'antimatter_condenser': return state.buildings.antimatter_condenser?.owned ? 1 : 0;
+    case 'prism': return state.buildings.prism?.owned ? 1 : 0;
+    case 'chancemaker': return state.buildings.chancemaker?.count || 0;
+    case 'fractal_engine': return state.buildings.fractal_engine?.count || 0;
     default: return 0;
   }
 }
@@ -2264,11 +3023,11 @@ export function getMineEfficiencyBonus(mineCount: number): number {
   return (mineCount - 1) * MINE_EFFICIENCY_BONUS_PER_MINE;
 }
 
-// Calculate bank interest based on deposit time
-// interestMultiplier: multiplier from trinkets (e.g., 10 for void_merchants_pact = 10x interest)
-export function calculateBankInterest(depositAmount: number, depositTimestamp: number, now: number, interestMultiplier: number = 1, sideLevel: number = 0): number {
-  const minutesDeposited = (now - depositTimestamp) / 60000;
-  const baseRate = getSideLevelBankInterestRate(sideLevel);
+// Calculate bank interest based on active play time (only accrues while tab is open)
+// bankActiveMinutes: cumulative minutes the tab was open while deposit exists
+export function calculateBankInterest(depositAmount: number, depositTimestamp: number, now: number, interestMultiplier: number = 1, sideLevel: number = 0, bankActiveMinutes: number = 0, ascensionInterestBonus: number = 0): number {
+  const minutesDeposited = bankActiveMinutes > 0 ? bankActiveMinutes : (now - depositTimestamp) / 60000;
+  const baseRate = getSideLevelBankInterestRate(sideLevel) + ascensionInterestBonus;
   const baseInterestRate = baseRate * interestMultiplier;
   const interestRate = baseInterestRate + (minutesDeposited * BANK_TIME_MULTIPLIER);
   return Math.floor(depositAmount * interestRate * minutesDeposited);
@@ -2331,16 +3090,20 @@ export function generateShipmentDelivery(shipmentCount: number): ShipmentDeliver
   
   if (roll < SHIPMENT_REWARDS.exoticRock) {
     type = 'exotic_rock';
-    value = 'exotic_' + Math.floor(Math.random() * 5); // 5 exotic rock types
+    const exoticRocks = EXOTIC_ROCKS;
+    const picked = exoticRocks[Math.floor(Math.random() * exoticRocks.length)];
+    value = picked ? picked.id : 'clown_rock';
   } else if (roll < SHIPMENT_REWARDS.exoticRock + SHIPMENT_REWARDS.trinket) {
     type = 'trinket';
-    value = 'shipment_trinket_' + Math.floor(Math.random() * 3);
+    const pool = TRINKETS.filter(t => ['common', 'rare', 'epic'].includes(t.rarity));
+    const picked = pool[Math.floor(Math.random() * pool.length)];
+    value = picked ? picked.id : 'avatar_ring';
   } else if (roll < SHIPMENT_REWARDS.exoticRock + SHIPMENT_REWARDS.trinket + SHIPMENT_REWARDS.prestigeTokens) {
     type = 'prestige_tokens';
-    value = 1 + Math.floor(Math.random() * 3); // 1-3 tokens
+    value = 1 + Math.floor(Math.random() * 3);
   } else if (roll < 1 - SHIPMENT_REWARDS.title) {
     type = 'money';
-    value = Math.floor(1000000 * Math.pow(10, Math.random() * 6)); // 1M - 1T random
+    value = Math.floor(1000000 * Math.pow(10, Math.random() * 6));
   } else {
     type = 'title';
     value = 'dimensional_traveler';
@@ -2352,6 +3115,33 @@ export function generateShipmentDelivery(shipmentCount: number): ShipmentDeliver
     value,
     arrivalTime: getNextShipmentDeliveryTime(shipmentCount),
   };
+}
+
+// Get display name for a shipment delivery
+export function getShipmentDeliveryName(delivery: ShipmentDelivery): string {
+  switch (delivery.type) {
+    case 'exotic_rock': {
+      const rock = EXOTIC_ROCKS.find(r => r.id === delivery.value);
+      return rock ? rock.name : 'Exotic Rock';
+    }
+    case 'trinket': {
+      const trinket = TRINKETS.find(t => t.id === delivery.value);
+      return trinket ? trinket.name : 'Mystery Trinket';
+    }
+    case 'prestige_tokens':
+      return `${delivery.value} Prestige Token${(delivery.value as number) > 1 ? 's' : ''}`;
+    case 'money': {
+      const n = delivery.value as number;
+      if (n >= 1e12) return `$${(n / 1e12).toFixed(1)}T`;
+      if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`;
+      if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`;
+      return `$${n.toLocaleString()}`;
+    }
+    case 'title':
+      return 'Dimensional Traveler (Title)';
+    default:
+      return 'Unknown Delivery';
+  }
 }
 
 // =====================

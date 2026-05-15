@@ -709,22 +709,26 @@ export default function GameShop({ onClose }: GameShopProps) {
           {activeTab === 'buildings' && (
             <div className="space-y-1.5">
               {BUILDINGS.filter(building => {
-                if (building.id === 'shipment') return false;
                 if (building.pathRestriction === null) return true;
                 if (!gameState.chosenPath) return false;
                 return building.pathRestriction === gameState.chosenPath;
               }).map(building => {
-                const count = building.id === 'bank' 
-                  ? (gameState.buildings.bank.owned ? 1 : 0)
-                  : building.id === 'temple'
-                    ? (gameState.buildings.temple.owned ? 1 : 0)
-                    : building.id === 'wizard_tower'
-                      ? (gameState.buildings.wizard_tower.owned ? 1 : 0)
-                      : building.id === 'mine'
-                        ? gameState.buildings.mine.count
-                        : building.id === 'factory'
-                          ? gameState.buildings.factory.count
-                          : gameState.buildings.shipment.count;
+                const countMap: Record<string, number> = {
+                  mine: gameState.buildings.mine.count,
+                  bank: gameState.buildings.bank.owned ? 1 : 0,
+                  factory: gameState.buildings.factory.count,
+                  temple: gameState.buildings.temple.owned ? 1 : 0,
+                  wizard_tower: gameState.buildings.wizard_tower.owned ? 1 : 0,
+                  shipment: gameState.buildings.shipment.count,
+                  gem_farm: gameState.buildings.gem_farm?.count || 0,
+                  alchemy_lab: gameState.buildings.alchemy_lab?.count || 0,
+                  time_machine: gameState.buildings.time_machine?.count || 0,
+                  antimatter_condenser: gameState.buildings.antimatter_condenser?.owned ? 1 : 0,
+                  prism: gameState.buildings.prism?.owned ? 1 : 0,
+                  chancemaker: gameState.buildings.chancemaker?.count || 0,
+                  fractal_engine: gameState.buildings.fractal_engine?.count || 0,
+                };
+                const count = countMap[building.id] || 0;
                 
                 const cost = getBuildingCostForType(building.id);
                 const canAfford = canAffordBuilding(building.id);
@@ -745,10 +749,11 @@ export default function GameShop({ onClose }: GameShopProps) {
                     {/* Building Icon */}
                     <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gray-800 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
                       <Image 
-                        src={`/game/buildings/${building.id}.png`}
+                        src={building.image}
                         alt={building.name}
                         width={48}
                         height={48}
+                        unoptimized
                         className="object-contain"
                         style={{ imageRendering: 'pixelated' }}
                       />

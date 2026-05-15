@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '@/contexts/GameContext';
-import { ACHIEVEMENTS, checkAchievementUnlocked, TRINKETS, TITLES, TITLE_NAME_STYLES, PRESTIGE_UPGRADES } from '@/types/game';
+import { ACHIEVEMENTS, checkAchievementUnlocked, TRINKETS, TITLES, TITLE_NAME_STYLES, PRESTIGE_UPGRADES, summarizeTitleBuffLines, getTitleAscensionUnlockLines } from '@/types/game';
 import { supabase } from '@/lib/supabase';
 
 interface AchievementsPanelProps {
@@ -184,6 +184,11 @@ export default function AchievementsPanel({ isTrinketIndexOpen, setIsTrinketInde
                     const hasTitleMaster = gameState.ownedPrestigeUpgradeIds?.includes('title_master');
                     const maxEquipped = hasTitleMaster ? 2 : 1;
                     const canEquip = !isEquipped && (gameState.equippedTitleIds?.length || 0) < maxEquipped;
+                    const buffLines = summarizeTitleBuffLines(title);
+                    const ascUnlockLines = getTitleAscensionUnlockLines(title.id);
+                    const effectParts = buffLines.length > 0 ? buffLines : ascUnlockLines;
+                    const effectText =
+                      effectParts.length > 0 ? effectParts.join(' · ') : 'Equipping: cosmetic (no extra stat line)';
                     
                     return (
                       <button
@@ -200,17 +205,19 @@ export default function AchievementsPanel({ isTrinketIndexOpen, setIsTrinketInde
                               : 'bg-gray-800/20 border-gray-800/20 opacity-50'
                         }`}
                       >
-                        <span className="text-lg flex-shrink-0">{title.icon}</span>
+                        {title.iconImage
+                          ? <img src={title.iconImage} alt={title.name} width={24} height={24} className="flex-shrink-0 object-contain" style={{ imageRendering: 'pixelated' }} />
+                          : <span className="text-lg flex-shrink-0">{title.icon}</span>
+                        }
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
                             <span className={`font-bold text-xs ${TITLE_NAME_STYLES[title.nameStyle]}`}>{title.name}</span>
                             {isEquipped && <span className="text-[8px] bg-purple-500/30 text-purple-300 px-1 py-0.5 rounded font-bold">EQUIP</span>}
                           </div>
-                          <span className="text-[10px] text-green-400/80">
-                            {title.buffs.moneyBonus ? `+${Math.round(title.buffs.moneyBonus * 100)}% money ` : ''}
-                            {title.buffs.allBonus ? `+${Math.round(title.buffs.allBonus * 100)}% all ` : ''}
-                            {title.buffs.speedBonus ? `+${Math.round(title.buffs.speedBonus * 100)}% speed ` : ''}
-                          </span>
+                          {title.description ? (
+                            <p className="text-[10px] text-gray-400/95 mt-0.5 leading-snug">{title.description}</p>
+                          ) : null}
+                          <p className="text-[10px] text-green-400/85 mt-0.5">{effectText}</p>
                         </div>
                       </button>
                     );

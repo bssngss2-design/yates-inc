@@ -114,41 +114,6 @@ export default function GameSettings({ isOpen, onClose }: GameSettingsProps) {
             </div>
           </div>
 
-          {/* Stats Section */}
-          <div>
-            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Statistics</h3>
-            <div className="bg-gray-800/50 rounded-lg border border-gray-700/30 p-3 space-y-1.5">
-              <div className="flex justify-between text-xs">
-                <span className="text-gray-400">Total Clicks</span>
-                <span className="text-white font-medium">{gameState.totalClicks.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-gray-400">Total Money Earned</span>
-                <span className="text-white font-medium">${gameState.totalMoneyEarned.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-gray-400">Prestige Count</span>
-                <span className="text-white font-medium">{gameState.prestigeCount}</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-gray-400">Rocks Broken</span>
-                <span className="text-white font-medium">{(gameState.rocksMinedCount || 0).toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-gray-400">Pickaxes Owned</span>
-                <span className="text-white font-medium">{gameState.ownedPickaxeIds.length}</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-gray-400">Trinkets Owned</span>
-                <span className="text-white font-medium">{gameState.ownedTrinketIds.length}</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-gray-400">Miners</span>
-                <span className="text-white font-medium">{gameState.minerCount}</span>
-              </div>
-            </div>
-          </div>
-
           {/* Save */}
           <div>
             <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Data</h3>

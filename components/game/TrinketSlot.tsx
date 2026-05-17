@@ -1,15 +1,25 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import Image from 'next/image';
 import { useGame } from '@/contexts/GameContext';
 import { TRINKETS, RARITY_COLORS, Trinket, RELIC_MULTIPLIERS, TALISMAN_MULTIPLIERS, YATES_TOTEM_RELIC_EFFECTS, YATES_TOTEM_TALISMAN_EFFECTS, TrinketEffects } from '@/types/game';
+
+/** w-72 (288px) — keep in sync with menu class */
+const SELECTOR_W = 400;
+const M = 8;
+/** Extra offset so the panel sits lower under the slots (user preference) */
+const SELECTOR_NUDGE_DOWN = 250;
 
 export default function TrinketSlot() {
   const [showSelector, setShowSelector] = useState(false);
   const [showBonusDetails, setShowBonusDetails] = useState(false);
   const [rarityFilter, setRarityFilter] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const selectorMenuRef = useRef<HTMLDivElement>(null);
+  const [selectorPos, setSelectorPos] = useState<{ top: number; left: number } | null>(null);
+
   const { 
     gameState, 
     getEquippedTrinkets, 
@@ -17,6 +27,7 @@ export default function TrinketSlot() {
     unequipTrinket, 
     canEquipDualTrinkets,
     canEquipTripleTrinkets,
+    canEquipQuadTrinkets,
     getTotalBonuses,
     getActiveBuffs,
     isWizardRitualActive,
@@ -80,7 +91,13 @@ export default function TrinketSlot() {
     }
   }
   
-  const maxSlots = canEquipTripleTrinkets() ? 3 : canEquipDualTrinkets() ? 2 : 1;
+  const maxSlots = canEquipQuadTrinkets()
+    ? 4
+    : canEquipTripleTrinkets()
+      ? 3
+      : canEquipDualTrinkets()
+        ? 2
+        : 1;
   const bonuses = getTotalBonuses();
   
   // Check if any bonuses are active
@@ -99,10 +116,42 @@ export default function TrinketSlot() {
   const wizardTimeRemaining = wizardRitualActive && gameState.buildings.wizard_tower.ritualEndTime 
     ? Math.ceil((gameState.buildings.wizard_tower.ritualEndTime - now) / 1000) : 0;
 
+  // Fixed position: right-align to trinket row; flip above anchor when there is not enough room below
+  useLayoutEffect(() => {
+    if (!showSelector) {
+      setSelectorPos(null);
+      return;
+    }
+    const update = () => {
+      const el = anchorRef.current;
+      const menu = selectorMenuRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      let left = r.right - SELECTOR_W;
+      left = Math.max(M, Math.min(left, vw - SELECTOR_W - M));
+
+      const menuH = menu?.offsetHeight ?? 320;
+      let top = r.bottom + M + SELECTOR_NUDGE_DOWN;
+      if (top + menuH > vh - M) {
+        top = r.top - menuH - M + SELECTOR_NUDGE_DOWN;
+      }
+      if (top < M) top = M;
+      if (top + menuH > vh - M) {
+        top = Math.max(M, vh - M - menuH);
+      }
+      setSelectorPos({ top, left });
+    };
+    update();
+    const id = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(id);
+  }, [showSelector, equippableItems.length, rarityFilter, maxSlots]);
+
   return (
     <div className="relative">
       {/* Equipped Trinket Slots */}
-      <div className="flex gap-2">
+      <div ref={anchorRef} className="flex gap-2">
         {Array.from({ length: maxSlots }).map((_, i) => {
           const equippedId = gameState.equippedTrinketIds[i];
           const equippedItem = equippableItems.find(item => item.id === equippedId);
@@ -419,9 +468,18 @@ export default function TrinketSlot() {
         />
       )}
       
-      {/* Trinket Selector Dropdown — with rarity filters & equipped pinning */}
+      {/* Trinket Selector — fixed + clamped so overflow:hidden ancestors cannot clip it */}
       {showSelector && (
-        <div className="absolute top-full left-0 mt-2 w-72 bg-gray-900/95 backdrop-blur-sm rounded-xl p-3 border border-gray-600 shadow-xl z-[80]">
+        <div
+          ref={selectorMenuRef}
+          className="fixed w-72 bg-gray-900/95 backdrop-blur-sm rounded-xl p-3 border border-gray-600 shadow-xl z-[80]"
+          style={{
+            top: selectorPos?.top ?? 0,
+            left: selectorPos?.left ?? 0,
+            visibility: selectorPos ? 'visible' : 'hidden',
+            pointerEvents: selectorPos ? 'auto' : 'none',
+          }}
+        >
           <div className="flex items-center justify-between mb-2">
             <h4 className="text-white font-bold text-xs">Trinkets <span className="text-gray-500 font-normal">({equippableItems.length})</span></h4>
             <button 

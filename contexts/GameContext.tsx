@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef } from 'react';
 import { 
-  GameState, COUPON_DROP_RATES, COUPON_REQUIREMENTS, ShopStock, 
+  GameState, GameTotalBonuses, COUPON_DROP_RATES, COUPON_REQUIREMENTS, ShopStock, 
   SHOP_RESTOCK_INTERVAL, SHOP_MIN_ITEMS, SHOP_MAX_ITEMS, SHOP_MIN_QUANTITY, SHOP_MAX_QUANTITY, 
   AUTOCLICKER_COST, PRESTIGE_REQUIREMENTS, YATES_ACCOUNT_ID, getPrestigeRockRequirement, getPrestigePickaxeRequirement, MAX_PRESTIGE_WITH_BUFFS,
   TRINKETS, Trinket, TRINKET_SHOP_REFRESH_INTERVAL, TRINKET_SHOP_MIN_ITEMS, TRINKET_SHOP_MAX_ITEMS,
@@ -157,8 +157,8 @@ interface GameContextType {
   unequipTrinket: (trinketId: string) => void;
   ownsTrinket: (trinketId: string) => boolean;
   getEquippedTrinkets: () => Trinket[];
-  getTotalBonuses: () => { moneyBonus: number; rockDamageBonus: number; clickSpeedBonus: number; couponBonus: number; minerSpeedBonus: number; minerDamageBonus: number };
-  getBonusBreakdown: (stat: 'moneyBonus' | 'rockDamageBonus' | 'clickSpeedBonus' | 'couponBonus' | 'minerSpeedBonus' | 'minerDamageBonus') => { source: string; value: number }[];
+  getTotalBonuses: () => GameTotalBonuses;
+  getBonusBreakdown: (stat: 'moneyBonus' | 'rockDamageBonus' | 'clickSpeedBonus' | 'couponBonus' | 'minerSpeedBonus' | 'minerDamageBonus' | 'luckBonus' | 'dropChanceBonus') => { source: string; value: number }[];
   // Relic & Talisman conversion functions
   convertToRelic: (trinketId: string, payWithTokens: boolean) => boolean;  // payWithTokens: true = tokens, false = money
   convertToTalisman: (trinketId: string) => boolean;
@@ -175,6 +175,7 @@ interface GameContextType {
   ownsPrestigeUpgrade: (upgradeId: string) => boolean;
   canEquipDualTrinkets: () => boolean;
   canEquipTripleTrinkets: () => boolean;
+  canEquipQuadTrinkets: () => boolean;
   // Auto-prestige
   toggleAutoPrestige: () => void;
   // Admin functions (terminal)
@@ -350,6 +351,7 @@ const defaultGameState: GameState = {
   unlockedAchievementIds: [],
   // Ranking system tracking
   totalMoneyEarned: 0,
+  totalMoneyEarnedAtPrestigeStart: 0,
   gameStartTime: Date.now(),
   fastestPrestigeTime: null,
   // Pro Player Titles
@@ -1482,12 +1484,14 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
             damageBonus += bonus.pcxDamage;
           }
         }
+
+        const minePassiveAscEff = sumAscensionEffects(prev.ownedAscensionNodeIds || []);
         
         // Wizard ritual multiplier (3x base + ascension power bonus)
         if (prev.buildings.wizard_tower.ritualActive && 
             prev.buildings.wizard_tower.ritualEndTime &&
             Date.now() < prev.buildings.wizard_tower.ritualEndTime) {
-          const mineRitualMult = 3.0 + minerAscEff.wizardPowerBonus;
+          const mineRitualMult = 3.0 + minePassiveAscEff.wizardPowerBonus;
           moneyBonus = (1 + moneyBonus) * mineRitualMult - 1;
           damageBonus = (1 + damageBonus) * mineRitualMult - 1;
         }
@@ -1495,7 +1499,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         if (templeRank === 2 || templeRank === 3) {
           // Special mode: 20% of click money every 0.5s per mine
           const pickaxe = getPickaxeById(prev.currentPickaxeId);
-          const clickMoney = safeMoney(rock.moneyPerClick * prev.prestigeMultiplier * (1 + moneyBonus) * (1 + minerAscEff.buildingBonus));
+          const clickMoney = safeMoney(rock.moneyPerClick * prev.prestigeMultiplier * (1 + moneyBonus) * (1 + minePassiveAscEff.buildingBonus));
           const passiveMoney = safeMoney(clickMoney * 0.20 * mineCount);
           
           return {
@@ -1528,7 +1532,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
           const leftoverDamage = overkillDamage % fullRockHP;
           const finalHP = fullRockHP - leftoverDamage;
           
-          const moneyPerRock = safeMoney(rock.moneyPerBreak * prev.prestigeMultiplier * (1 + moneyBonus) * (1 + minerAscEff.buildingBonus));
+          const moneyPerRock = safeMoney(rock.moneyPerBreak * prev.prestigeMultiplier * (1 + moneyBonus) * (1 + minePassiveAscEff.buildingBonus));
           const totalMoney = safeMoney(moneyPerRock * totalRocksBroken);
           
           const highestUnlocked = getHighestUnlockedRock(newTotalClicks, prev.prestigeCount);
@@ -1953,8 +1957,8 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
   ]);
 
   // Helper function to calculate total bonuses from equipped trinkets and prestige upgrades
-  const calculateTotalBonuses = useCallback(() => {
-    let bonuses = {
+  const calculateTotalBonuses = useCallback((): GameTotalBonuses => {
+    let bonuses: GameTotalBonuses = {
       moneyBonus: 0,
       rockDamageBonus: 0,
       clickSpeedBonus: 0,
@@ -2028,6 +2032,11 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         bonuses.couponBonus += (e.couponBonus || 0) + allB;
         bonuses.minerSpeedBonus += (e.minerSpeedBonus || 0) + allB;
         bonuses.minerDamageBonus += (e.minerDamageBonus || 0) + allB;
+        const luckPts = (e.luckBonus || 0) + allB;
+        if (luckPts) {
+          bonuses.luckBonus += luckPts;
+          bonuses.couponBonus += luckPts;
+        }
       }
     }
 
@@ -2662,11 +2671,14 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       for (const upgradeId of prev.ownedPrestigeUpgradeIds) {
         const upgrade = PRESTIGE_UPGRADES.find(u => u.id === upgradeId);
         if (upgrade) {
-          const allB = upgrade.effects.allBonus || 0;
-          rockDamageBonus += (upgrade.effects.rockDamageBonus || 0) + allB;
-          moneyBonus += (upgrade.effects.moneyBonus || 0) + allB;
-          couponBonus += (upgrade.effects.couponBonus || 0) + allB;
-          clickSpeedBonus += (upgrade.effects.clickSpeedBonus || 0) + allB;
+          const e = upgrade.effects;
+          const allB = e.allBonus || 0;
+          rockDamageBonus += (e.rockDamageBonus || 0) + allB;
+          moneyBonus += (e.moneyBonus || 0) + allB;
+          couponBonus += (e.couponBonus || 0) + allB;
+          clickSpeedBonus += (e.clickSpeedBonus || 0) + allB;
+          const luckPts = (e.luckBonus || 0) + allB;
+          if (luckPts) couponBonus += luckPts;
         }
       }
       
@@ -3335,6 +3347,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         gems: newGems,
         heavenlyChips: (prev.heavenlyChips || 0) + totalNewHC,
         totalHCEarned: (prev.totalHCEarned || 0) + totalNewHC,
+        totalMoneyEarnedAtPrestigeStart: prev.totalMoneyEarned,
       };
     });
 
@@ -3521,6 +3534,10 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     return gameState.ownedPrestigeUpgradeIds.includes('triple_trinkets');
   }, [gameState.ownedPrestigeUpgradeIds]);
 
+  const canEquipQuadTrinkets = useCallback(() => {
+    return gameState.ownedPrestigeUpgradeIds.includes('quad_trinkets');
+  }, [gameState.ownedPrestigeUpgradeIds]);
+
   const equipTrinket = useCallback((itemId: string) => {
     // Check if owned - could be trinket, relic, or talisman
     const isRelic = itemId.endsWith('_relic');
@@ -3538,7 +3555,13 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     if (!isOwned) return false;
     if (gameState.equippedTrinketIds.includes(itemId)) return false;
     
-    const maxEquipped = canEquipTripleTrinkets() ? 3 : canEquipDualTrinkets() ? 2 : 1;
+    const maxEquipped = canEquipQuadTrinkets()
+      ? 4
+      : canEquipTripleTrinkets()
+        ? 3
+        : canEquipDualTrinkets()
+          ? 2
+          : 1;
 
     setGameState(prev => {
       let newEquipped = [...prev.equippedTrinketIds, itemId];
@@ -3550,7 +3573,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     });
 
     return true;
-  }, [gameState.ownedTrinketIds, gameState.ownedRelicIds, gameState.ownedTalismanIds, gameState.equippedTrinketIds, canEquipDualTrinkets, canEquipTripleTrinkets]);
+  }, [gameState.ownedTrinketIds, gameState.ownedRelicIds, gameState.ownedTalismanIds, gameState.equippedTrinketIds, canEquipDualTrinkets, canEquipTripleTrinkets, canEquipQuadTrinkets]);
 
   const unequipTrinket = useCallback((trinketId: string) => {
     setGameState(prev => ({
@@ -3611,14 +3634,15 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       if (!upgrade) continue;
       const e = upgrade.effects;
       const allB = e.allBonus || 0;
+      const luckPts = (e.luckBonus || 0) + allB;
       const statMap: Record<BonusStat, number> = {
         moneyBonus: (e.moneyBonus || 0) + allB,
         rockDamageBonus: (e.rockDamageBonus || 0) + allB,
         clickSpeedBonus: (e.clickSpeedBonus || 0) + allB,
-        couponBonus: (e.couponBonus || 0) + allB,
+        couponBonus: (e.couponBonus || 0) + allB + (e.luckBonus || 0),
         minerSpeedBonus: (e.minerSpeedBonus || 0) + allB,
         minerDamageBonus: (e.minerDamageBonus || 0) + allB,
-        luckBonus: 0,
+        luckBonus: luckPts,
         dropChanceBonus: 0,
       };
       if (statMap[stat] > 0) sources.push({ source: `⭐ ${upgrade.name}`, value: statMap[stat] });
@@ -4999,9 +5023,11 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     );
 
     const fullAmount = principal + interest;
-    const withdrawCap = Math.max(gameState.yatesDollars, (gameState.totalMoneyEarned || 0) / 2);
-    const withdrawAmount = Math.min(fullAmount, withdrawCap);
-    const capped = withdrawAmount < fullAmount;
+    // Always return deposit + accrued interest. Previously withdrawals were capped at
+    // max(wallet, totalMoneyEarned/2), which could be below the deposit (e.g. bank loans
+    // add cash without incrementing totalMoneyEarned), so players only received a sliver.
+    const withdrawAmount = fullAmount;
+    const capped = false;
 
     setGameState(prev => ({
       ...prev,
@@ -6285,6 +6311,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         ownsPrestigeUpgrade,
         canEquipDualTrinkets,
         canEquipTripleTrinkets,
+        canEquipQuadTrinkets,
         // Auto-prestige
         toggleAutoPrestige,
         // Admin functions (terminal)

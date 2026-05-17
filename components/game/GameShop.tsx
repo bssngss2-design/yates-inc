@@ -968,6 +968,7 @@ export default function GameShop({ onClose }: GameShopProps) {
                 {[...PRESTIGE_UPGRADES].sort((a, b) => a.cost - b.cost).map(upgrade => {
                   const owned = ownsPrestigeUpgrade(upgrade.id);
                   const canAfford = gameState.prestigeTokens >= upgrade.cost;
+                  const missingRequirement = upgrade.requires && !ownsPrestigeUpgrade(upgrade.requires);
                   
                   return (
                     <div
@@ -975,9 +976,11 @@ export default function GameShop({ onClose }: GameShopProps) {
                       className={`p-4 rounded-xl border-2 transition-all ${
                         owned 
                           ? 'border-green-500 bg-green-500/10' 
-                          : canAfford
-                            ? 'border-purple-500 bg-purple-500/10 hover:bg-purple-500/20'
-                            : 'border-gray-600 bg-gray-700/30 opacity-60'
+                          : missingRequirement
+                            ? 'border-red-600 bg-red-500/10 opacity-60'
+                            : canAfford
+                              ? 'border-purple-500 bg-purple-500/10 hover:bg-purple-500/20'
+                              : 'border-gray-600 bg-gray-700/30 opacity-60'
                       }`}
                     >
                       <div className="flex items-center justify-between">
@@ -1006,14 +1009,23 @@ export default function GameShop({ onClose }: GameShopProps) {
                             {upgrade.id === 'trinket_amplifier' && '✨'}
                             {upgrade.id === 'yates_blessing' && '🙏'}
                             {upgrade.id === 'title_master' && '👑'}
+                            {upgrade.id === 'triple_trinkets' && '💎💎💎'}
+                            {upgrade.id === 'quad_trinkets' && '💎💎💎💎'}
                             {upgrade.name}
                           </h3>
                           <p className="text-gray-400 text-sm">{upgrade.description}</p>
+                          {missingRequirement && (
+                            <p className="text-red-400 text-xs mt-1">
+                              🔒 Requires: {PRESTIGE_UPGRADES.find(u => u.id === upgrade.requires)?.name}
+                            </p>
+                          )}
                         </div>
                         
                         <div className="text-right ml-4">
                           {owned ? (
                             <span className="text-green-400 font-bold">✓ Owned</span>
+                          ) : missingRequirement ? (
+                            <span className="text-red-400 font-bold text-sm">🔒 Locked</span>
                           ) : (
                             <button
                               onClick={() => buyPrestigeUpgrade(upgrade.id)}

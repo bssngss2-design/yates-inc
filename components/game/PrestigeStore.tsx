@@ -112,6 +112,7 @@ export default function PrestigeStore() {
                           {upgrade.id === 'yates_blessing' && '🙏'}
                           {upgrade.id === 'title_master' && '👑'}
                           {upgrade.id === 'triple_trinkets' && '💎💎💎'}
+                          {upgrade.id === 'quad_trinkets' && '💎💎💎💎'}
                           {upgrade.name}
                         </h3>
                         <p className="text-gray-400 text-sm">{upgrade.description}</p>

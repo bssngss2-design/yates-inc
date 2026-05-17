@@ -47,6 +47,18 @@ export interface ShopStock {
   lastRestockTime: number; // timestamp
 }
 
+/** Aggregated equipment/prestige/path bonuses (UI + coupon drop math). */
+export type GameTotalBonuses = {
+  moneyBonus: number;
+  rockDamageBonus: number;
+  clickSpeedBonus: number;
+  couponBonus: number;
+  minerSpeedBonus: number;
+  minerDamageBonus: number;
+  luckBonus: number;
+  dropChanceBonus: number;
+};
+
 // =====================
 // LIGHT VS DARKNESS PATH SYSTEM
 // =====================
@@ -298,6 +310,8 @@ export interface GameState {
   unlockedAchievementIds: string[];
   // Ranking system tracking
   totalMoneyEarned: number;           // All-time money earned (never resets except for ranking period)
+  /** Lifetime `totalMoneyEarned` snapshot at moment of latest prestige — used for "cash this prestige" */
+  totalMoneyEarnedAtPrestigeStart: number;
   gameStartTime: number;              // Timestamp when game started (for speed ranking)
   fastestPrestigeTime: number | null; // Fastest time to first prestige in ms
   // Pro Player Titles
@@ -570,6 +584,8 @@ export interface TrinketEffects {
   minerDamageBonus?: number;  // % extra miner damage
   minerMoneyBonus?: number;   // % extra money from miners
   couponLuckBonus?: number;   // % extra coupon luck
+  /** Flat luck points (same unit as ascension luck nodes; stacks into Luck + lottery odds) */
+  luckBonus?: number;
   allBonus?: number;          // % bonus to everything
   prestigeProtection?: boolean; // Keep money on prestige (consumable)
   trinketBonus?: number;      // % boost to all trinket effects
@@ -1138,6 +1154,15 @@ export const PRESTIGE_UPGRADES: PrestigeUpgrade[] = [
     maxPurchases: 1,
     requires: 'dual_trinkets',
   },
+  {
+    id: 'quad_trinkets',
+    name: 'Four-way Trinkets',
+    cost: 67,
+    effects: {},
+    description: 'Equip 4 trinkets at once (requires Triple Trinkets)',
+    maxPurchases: 1,
+    requires: 'triple_trinkets',
+  },
   // === NEW PRESTIGE UPGRADES ===
   {
     id: 'miner_sprint',
@@ -1175,8 +1200,8 @@ export const PRESTIGE_UPGRADES: PrestigeUpgrade[] = [
     id: 'relic_hunter',
     name: 'Relic Hunter',
     cost: 16,
-    effects: { couponBonus: 0.30 },
-    description: '+30% relic luck',
+    effects: { luckBonus: 3.5 },
+    description: '+3.5 Luck points',
     maxPurchases: 1,
   },
   {
@@ -1873,6 +1898,62 @@ function arc(baseAngle: number, index: number, radius: number = 178, curve: numb
   return { x: Math.round(Math.cos(angle) * r), y: Math.round(Math.sin(angle) * r) };
 }
 
+/** Pixel icons under `public/game/ascension/` (copied from repo-root ascension art). */
+const ASCENSION_MONEY_ICONS = [
+  '/game/ascension/money_1.png',
+  '/game/ascension/money_2.png',
+  '/game/ascension/money_3.png',
+  '/game/ascension/money_4.png',
+  '/game/ascension/money_5.png',
+  '/game/ascension/money_6.png',
+  '/game/ascension/money_7.png',
+  '/game/ascension/money_8.png',
+  '/game/ascension/money_9.png',
+  '/game/ascension/money_10.png',
+] as const;
+
+const ASCENSION_DAMAGE_ICONS: (string | undefined)[] = [
+  '/game/ascension/dmg_1.png',
+  '/game/ascension/dmg_2.png',
+  '/game/ascension/dmg_3.png',
+  undefined,
+  undefined,
+  '/game/ascension/dmg_6.png',
+  undefined,
+  undefined,
+  '/game/ascension/dmg_9.png',
+  '/game/ascension/dmg_10.png',
+];
+
+const ASCENSION_CLICK_ICONS: (string | undefined)[] = [
+  '/game/ascension/click_1.png',
+  '/game/ascension/click_2.png',
+  '/game/ascension/click_3.png',
+  undefined,
+  undefined,
+  undefined,
+  '/game/ascension/click_7.png',
+  '/game/ascension/click_8.png',
+  '/game/ascension/click_9.png',
+  '/game/ascension/click_10.png',
+];
+
+const ASCENSION_ANTIMATTER_ICONS: (string | undefined)[] = [
+  '/game/ascension/anti_1.png',
+  undefined,
+  '/game/ascension/anti_3.png',
+  '/game/ascension/anti_4.png',
+  '/game/ascension/anti_5.png',
+];
+
+const ASCENSION_PRISM_ICONS: (string | undefined)[] = [
+  undefined,
+  undefined,
+  undefined,
+  '/game/ascension/prism_4.png',
+  undefined,
+];
+
 export const ASCENSION_NODES: AscensionNode[] = [
   // ORIGIN
   node('origin', 'The Beginning', 'The first step to greatness. Unlocks all ascension paths.', 1, 'origin', null, {}, 0, 0),
@@ -1889,7 +1970,7 @@ export const ASCENSION_NODES: AscensionNode[] = [
     ['money_8', 'Rich Now?', '+50% money', 22, { moneyBonus: 0.50 }],
     ['money_9', 'Ultimatium Moneytum', '+55% money', 24, { moneyBonus: 0.55 }],
     ['money_10', 'Golden Toilet Paper?', '+60% money', 26, { moneyBonus: 0.60, titleReward: 'asc_money_heheh' }],
-  ].map((n, i) => node(n[0] as string, n[1] as string, n[2] as string, n[3] as number, 'money', i === 0 ? 'origin' : `money_${i}`, n[4] as AscensionNode['effects'], arc(-0.5, i, 140, 0.04).x, arc(-0.5, i, 140, 0.04).y)),
+  ].map((n, i) => node(n[0] as string, n[1] as string, n[2] as string, n[3] as number, 'money', i === 0 ? 'origin' : `money_${i}`, n[4] as AscensionNode['effects'], arc(-0.5, i, 140, 0.04).x, arc(-0.5, i, 140, 0.04).y, undefined, ASCENSION_MONEY_ICONS[i])),
 
   // PATH 2: DAMAGE — arcs to right (angle ~0.1 rad)
   ...[
@@ -1903,7 +1984,7 @@ export const ASCENSION_NODES: AscensionNode[] = [
     ['dmg_8', 'No Need For That Much', '+200% damage', 26, { damageBonus: 2.00 }],
     ['dmg_9', 'Yoo Chill With The Steroids', '+250% damage', 31, { damageBonus: 2.50 }],
     ['dmg_10', 'Arnalda Schatsnagger', '+350% damage', 36, { damageBonus: 3.50, titleReward: 'bernardo_lvl' }],
-  ].map((n, i) => node(n[0] as string, n[1] as string, n[2] as string, n[3] as number, 'damage', i === 0 ? 'origin' : `dmg_${i}`, n[4] as AscensionNode['effects'], arc(0.1, i, 140, -0.02).x, arc(0.1, i, 140, -0.02).y)),
+  ].map((n, i) => node(n[0] as string, n[1] as string, n[2] as string, n[3] as number, 'damage', i === 0 ? 'origin' : `dmg_${i}`, n[4] as AscensionNode['effects'], arc(0.1, i, 140, -0.02).x, arc(0.1, i, 140, -0.02).y, undefined, ASCENSION_DAMAGE_ICONS[i])),
 
   // PATH 3: CLICK SPEED — arcs to lower-right (angle ~0.7 rad)
   ...[
@@ -1917,7 +1998,7 @@ export const ASCENSION_NODES: AscensionNode[] = [
     ['click_8', 'Chill Ur Mouse Gon Break', '+150% click speed', 26, { clickSpeedBonus: 1.50 }],
     ['click_9', 'Nhewuumm', '+180% click speed', 29, { clickSpeedBonus: 1.80 }],
     ['click_10', 'Unshackled Cursors', '+250% click speed', 33, { clickSpeedBonus: 2.50, titleReward: 'asc_click_master' }],
-  ].map((n, i) => node(n[0] as string, n[1] as string, n[2] as string, n[3] as number, 'clickSpeed', i === 0 ? 'origin' : `click_${i}`, n[4] as AscensionNode['effects'], arc(0.7, i, 140, 0.03).x, arc(0.7, i, 140, 0.03).y)),
+  ].map((n, i) => node(n[0] as string, n[1] as string, n[2] as string, n[3] as number, 'clickSpeed', i === 0 ? 'origin' : `click_${i}`, n[4] as AscensionNode['effects'], arc(0.7, i, 140, 0.03).x, arc(0.7, i, 140, 0.03).y, undefined, ASCENSION_CLICK_ICONS[i])),
 
   // PATH 4: BUILDING POWER — arcs down (angle ~1.3 rad)
   ...[
@@ -1940,7 +2021,7 @@ export const ASCENSION_NODES: AscensionNode[] = [
     ['anti_3', "I'm Batman", '+60% antimatter fill rate', 20, { antimatterFillRate: 0.60 }],
     ['anti_4', 'I Live In The Shadows', '+90% antimatter fill rate', 25, { antimatterFillRate: 0.90 }],
     ['anti_5', 'Atomic', '+166% antimatter fill rate', 45, { antimatterFillRate: 1.66, titleReward: 'asc_consumer_darkness' }],
-  ].map((n, i) => node(n[0] as string, n[1] as string, n[2] as string, n[3] as number, 'antimatter', i === 0 ? 'origin' : `anti_${i}`, n[4] as AscensionNode['effects'], arc(-2.3, i, 175, 0.05).x, arc(-2.3, i, 175, 0.05).y)),
+  ].map((n, i) => node(n[0] as string, n[1] as string, n[2] as string, n[3] as number, 'antimatter', i === 0 ? 'origin' : `anti_${i}`, n[4] as AscensionNode['effects'], arc(-2.3, i, 175, 0.05).x, arc(-2.3, i, 175, 0.05).y, undefined, ASCENSION_ANTIMATTER_ICONS[i])),
 
   // PATH 6: PRISM — arcs left (angle ~-3.0 rad, LIGHT ONLY)
   ...[
@@ -1949,7 +2030,7 @@ export const ASCENSION_NODES: AscensionNode[] = [
     ['prism_3', 'Light + Light = Ligheter', '+60% Yates meter fill rate', 20, { prismFillRate: 0.60 }],
     ['prism_4', 'Dabura', '+90% Yates meter fill rate', 25, { prismFillRate: 0.90 }],
     ['prism_5', 'KA-tchin thicn tchin!', '+166% Yates meter fill rate', 45, { prismFillRate: 1.66, titleReward: 'asc_geometry_correct' }],
-  ].map((n, i) => node(n[0] as string, n[1] as string, n[2] as string, n[3] as number, 'prism', i === 0 ? 'origin' : `prism_${i}`, n[4] as AscensionNode['effects'], arc(-3.0, i, 175, -0.04).x, arc(-3.0, i, 175, -0.04).y)),
+  ].map((n, i) => node(n[0] as string, n[1] as string, n[2] as string, n[3] as number, 'prism', i === 0 ? 'origin' : `prism_${i}`, n[4] as AscensionNode['effects'], arc(-3.0, i, 175, -0.04).x, arc(-3.0, i, 175, -0.04).y, undefined, ASCENSION_PRISM_ICONS[i])),
 
   // PATH 7: BANK — arcs lower-left (angle ~2.4 rad)
   node('bank_1', '100 Credit score??', '+0.2% bank interest rate', 10, 'bank', 'origin', { bankInterest: 0.002 }, arc(2.5, 0, 172).x, arc(2.5, 0, 172).y),

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
+import { useState, useCallback, useRef, useMemo, useEffect, useLayoutEffect } from 'react';
 import Image from 'next/image';
 import { useGame } from '@/contexts/GameContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -26,7 +26,6 @@ import TaxPopup from './TaxPopup';
 import BuildingDisplay from './BuildingDisplay';
 import GameSettings from './GameSettings';
 import ForemanJackTutorial from './ForemanJackTutorial';
-import BuffBar from './BuffBar';
 import TempleModal from './TempleModal';
 import WizardTowerSidebar from './WizardTowerSidebar';
 import BankModal from './BankModal';
@@ -128,14 +127,23 @@ export default function MiningGame({ onExit }: MiningGameProps) {
   const [showSideLevel, setShowSideLevel] = useState(false);
   const [customMinerAmount, setCustomMinerAmount] = useState('');
   const [expandedBonusStat, setExpandedBonusStat] = useState<string | null>(null);
+  const [desktopStatsOpen, setDesktopStatsOpen] = useState(false);
   const [confirmingPath, setConfirmingPath] = useState<GamePath>(null);
   const [displayProgress, setDisplayProgress] = useState(0);
   const [rockBroken, setRockBroken] = useState(false);
+  /** Latest single-tap $ (Cookie-style “money per click” readout) */
+  const [lastTapMoney, setLastTapMoney] = useState(0);
 
   // Anti-cheat warning modal state
   const [showWarningModal, setShowWarningModal] = useState(false);
   const [appealText, setAppealText] = useState('');
   const [isSubmittingAppeal, setIsSubmittingAppeal] = useState(false);
+
+  useLayoutEffect(() => {
+    if (!desktopStatsOpen || !expandedBonusStat) return;
+    const row = document.querySelector(`[data-bonus-row="${expandedBonusStat}"]`);
+    row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [desktopStatsOpen, expandedBonusStat]);
 
   // Show warning modal when warnings change
   useEffect(() => {
@@ -176,7 +184,10 @@ export default function MiningGame({ onExit }: MiningGameProps) {
 
     // Mine the rock FIRST before any animations
     const result = mineRock();
-    
+    if (result.earnedMoney > 0) {
+      setLastTapMoney(result.earnedMoney);
+    }
+
     // Only animate if we actually mined
     if (result.earnedMoney > 0 || result.brokeRock) {
       // Trigger pickaxe swing animation
@@ -365,6 +376,22 @@ export default function MiningGame({ onExit }: MiningGameProps) {
   const minerDamageBonus = bonuses.minerDamageBonus + bonuses.minerSpeedBonus;
   const minerDps = Math.max(0, Math.ceil(gameState.minerCount * MINER_BASE_DAMAGE * (1 + minerDamageBonus)));
 
+  const baselinePrestigeEarn = gameState.totalMoneyEarnedAtPrestigeStart ?? 0;
+  const moneyEarnedThisPrestige = Math.max(0, (gameState.totalMoneyEarned ?? 0) - baselinePrestigeEarn);
+  /** Miner-focused $/s estimate (damage converted via break reward vs rock HP); excludes bank/temple/other passives */
+  const estimatedMinerMoneyPerSec = useMemo(() => {
+    const hp = Math.max(1, scaledRockMaxHP);
+    const approxPerBreak =
+      currentRock.moneyPerBreak * gameState.prestigeMultiplier * Math.max(0.01, 1 + bonuses.moneyBonus);
+    return (minerDps * approxPerBreak) / hp;
+  }, [
+    scaledRockMaxHP,
+    currentRock.moneyPerBreak,
+    gameState.prestigeMultiplier,
+    bonuses.moneyBonus,
+    minerDps,
+  ]);
+
   // Check if player can buy the next pickaxe (sequential order, accounting for path-locked pickaxes)
   const canBuyNextPickaxe = useMemo(() => {
     // Find the highest owned regular pickaxe (excluding Yates)
@@ -483,6 +510,9 @@ export default function MiningGame({ onExit }: MiningGameProps) {
 
   // Player needs to pick a side if they've prestiged but haven't chosen yet
   const needsPathChoice = gameState.prestigeCount >= 1 && !gameState.chosenPath;
+  const sidePathProgressPct = needsPathChoice
+    ? 0
+    : Math.min(100, Math.round(((gameState.sideLevel || 1) / 100) * 100));
 
   // =====================
   // BUILDING PANEL HELPERS (for desktop right panel)
@@ -668,7 +698,6 @@ export default function MiningGame({ onExit }: MiningGameProps) {
               </button>
             )}
             <PrestigeButton />
-            <TrinketSlot />
           </div>
 
           <div className="flex flex-col items-end gap-1 sm:gap-2">
@@ -759,319 +788,178 @@ export default function MiningGame({ onExit }: MiningGameProps) {
       </div>
 
       {/* ============================================================ */}
-      {/* DESKTOP LAYOUT (>= lg) — True 3-column Cookie Clicker style */}
+      {/* DESKTOP — Cookie Clicker inspired layout */}
       {/* ============================================================ */}
-      <div className="hidden lg:flex flex-col h-full relative z-10">
+      <div className="hidden lg:flex flex-col h-full min-h-0 relative z-10 font-serif antialiased [--cc-brown:#5c3317] [--cc-bg:#dcbfa6] [--cc-panel:#fdf6ea] [--cc-muted:#cbb896] [--cc-buy:#eec84a]" style={{ scrollbarWidth: 'none' }}>
         {/* Main 3-column row */}
-        <div className="flex w-full grow overflow-hidden">
+        <div className="flex w-full flex-1 min-h-0 grow overflow-hidden shadow-[inset_0_0_0_6px_rgba(92,51,23,0.35)]">
 
-          {/* ========== LEFT PANEL ========== */}
-          <div className="w-80 flex-none flex flex-col gap-3 self-stretch overflow-y-auto px-4 py-4 bg-gray-950/90 backdrop-blur-md border-r border-gray-700/40" style={{ scrollbarWidth: 'none' }}>
-            {/* Exit */}
-            {onExit && (
-              <button onClick={onExit} className="flex items-center gap-2 bg-gray-900/60 hover:bg-red-900/60 rounded-lg px-3 py-2 border border-gray-700/30 hover:border-red-500/40 transition-colors group">
-                <span className="text-gray-400 group-hover:text-red-400 text-sm">✕</span>
-                <span className="text-gray-400 group-hover:text-red-300 font-medium text-xs">EXIT</span>
-                <span className="text-gray-600 text-[10px] ml-auto">(ESC)</span>
+          {/* ========== LEFT — click area (cream panel, CC “bakery zone”) */}
+          <div className="w-[min(94vw,30rem)] xl:w-[32rem] flex-none flex flex-col gap-3 self-stretch overflow-y-auto px-4 py-3 bg-[linear-gradient(135deg,var(--cc-panel)_0%,#f0dec4_48%,var(--cc-bg)_100%)] border-r-4 border-[var(--cc-brown)]" style={{ scrollbarWidth: 'none' }}>
+            <div className="flex items-center gap-2 flex-wrap">
+              {onExit && (
+                <button
+                  type="button"
+                  onClick={onExit}
+                  className="flex items-center gap-2 rounded-sm px-3 py-1.5 border-2 border-t-[#fdf8ee] border-l-[#fdf8ee] border-r-[#3d2918] border-b-[#3d2918] bg-[#cfa87a] hover:bg-[#d8b892] shadow-[inset_0_-2px_0_rgba(0,0,0,0.12)] transition-colors shrink-0"
+                >
+                  <span className="text-[#3d2918] font-bold text-sm">✕</span>
+                  <span className="text-[11px] font-bold text-[#2c1810] uppercase tracking-wider">Exit</span>
+                  <span className="text-[9px] text-[#6b5344] hidden sm:inline">(ESC)</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowSettings(true)}
+                className="ml-auto flex items-center gap-2 rounded-sm px-3 py-1.5 border-2 border-t-[#fdf8ee] border-l-[#fdf8ee] border-r-[#3d2918] border-b-[#3d2918] bg-[#e8dfd0] hover:bg-[#f2ebe0] shrink-0"
+                title="Settings"
+              >
+                <span aria-hidden="true" className="text-base">⚙️</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#2c1810]">Menu</span>
               </button>
-            )}
-
-            {/* Currency Card */}
-            <div className="rounded-lg border border-amber-600/30 bg-gray-950/80 px-4 py-3 shadow-lg">
-              <span className="text-[10px] text-gray-400 uppercase tracking-wider">Yates Dollars</span>
-              <span className="block text-2xl font-bold text-yellow-400 mt-0.5">${formatNumber(gameState.yatesDollars)}</span>
-              {gameState.minerCount > 0 && (
-                <span className="block text-xs text-amber-500/70 mt-1">⛏️ {formatNumber(minerDps)} dmg/s</span>
-              )}
             </div>
 
-            {/* Secondary currencies */}
-            <div className="flex gap-2">
-              <div className="flex-1 rounded-lg border border-amber-600/20 bg-gray-950/60 px-3 py-2">
-                <span className="text-[10px] text-gray-500">🎟️ Lottery</span>
-                <span className="block text-sm font-bold text-amber-400">{gameState.lotteryTickets.toLocaleString()}</span>
-              </div>
-              <div className="flex-1 rounded-lg border border-blue-600/20 bg-gray-950/60 px-3 py-2">
-                <span className="text-[10px] text-gray-500">💎 Stokens</span>
-                <span className="block text-sm font-bold text-blue-400">{gameState.stokens}</span>
-              </div>
-            </div>
-
-            {/* Mining Level (rocks broken = levels) */}
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-white">Mining Level</span>
-                <span className="text-xs font-bold text-amber-400">{gameState.rocksMinedCount || 0}</span>
-              </div>
-              {gameState.prestigeCount > 0 && (
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-gray-500">Prestige</span>
-                  <span className="text-[10px] font-bold text-purple-400">Lv.{gameState.prestigeCount} (×{gameState.prestigeMultiplier.toFixed(1)})</span>
-                </div>
-              )}
-              <div className="text-[10px] text-gray-500">Reach side Lv.100 to switch paths</div>
-            </div>
-
-            <div className="h-px bg-gray-700/40" />
-
-            {/* Trinket Slots */}
-            <TrinketSlot />
-
-            {/* Prestige Button */}
-            <PrestigeButton />
-
-            {/* Achievements (hidden here, accessible from bottom bar) */}
-            <AchievementsPanel isTrinketIndexOpen={showTrinketIndex} setIsTrinketIndexOpen={setShowTrinketIndex} forceOpen={forceOpenAchievements} onForceOpenHandled={() => setForceOpenAchievements(false)} hidden />
-
-            <div className="h-px bg-gray-700/40" />
-
-            {/* Coupons */}
-            {totalCoupons > 0 && (
-              <div className="bg-gray-950/60 rounded-lg px-3 py-2 border border-purple-600/20">
-                <span className="text-[10px] text-gray-500 uppercase tracking-wider">Coupons</span>
-                <div className="flex items-center gap-2 mt-1">
-                  {gameState.coupons.discount30 > 0 && <div className="flex items-center gap-0.5 bg-green-600/20 px-1.5 py-0.5 rounded"><span className="text-[10px] text-green-400 font-bold">30%</span><span className="text-green-300 font-bold text-[10px]">×{gameState.coupons.discount30}</span></div>}
-                  {gameState.coupons.discount50 > 0 && <div className="flex items-center gap-0.5 bg-blue-600/20 px-1.5 py-0.5 rounded"><span className="text-[10px] text-blue-400 font-bold">50%</span><span className="text-blue-300 font-bold text-[10px]">×{gameState.coupons.discount50}</span></div>}
-                  {gameState.coupons.discount100 > 0 && <div className="flex items-center gap-0.5 bg-yellow-600/20 px-1.5 py-0.5 rounded"><span className="text-[10px] text-yellow-400 font-bold">FREE</span><span className="text-yellow-300 font-bold text-[10px]">×{gameState.coupons.discount100}</span></div>}
-                </div>
-              </div>
-            )}
-
-            {/* Active Buffs */}
-            {activeEffects.length > 0 && (
-              <div className="flex flex-col gap-2">
-                <span className="text-xs font-bold text-white">Active Buffs</span>
-                {activeEffects.map(e => (
-                  <div key={e.id} className={`flex items-center gap-2 rounded-md border px-3 py-2 ${
-                    e.type === 'debuff' ? 'border-red-800/40 bg-red-900/20' : 'border-amber-800/30 bg-amber-900/20'
-                  }`}>
-                    <span className="text-sm">{e.icon}</span>
-                    <span className={`grow text-[11px] ${e.type === 'debuff' ? 'text-red-300' : 'text-amber-200'}`}>{e.name}</span>
-                    <span className={`text-[11px] font-bold ${e.type === 'debuff' ? 'text-red-400' : 'text-amber-400'}`}>{fmtTime(e.timeLeft)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Bonuses — click any stat to see exact sources */}
-            {(bonuses.moneyBonus > 0 || bonuses.rockDamageBonus > 0 || bonuses.couponBonus > 0 || bonuses.clickSpeedBonus > 0 || bonuses.minerDamageBonus > 0 || bonuses.minerSpeedBonus > 0 || bonuses.luckBonus > 0 || bonuses.dropChanceBonus > 0) && (
-              <div className="flex flex-col gap-1">
-                <span className="text-xs font-bold text-white">Bonuses <span className="text-[9px] text-gray-500 font-normal">(click to expand)</span></span>
-                <div className="space-y-0.5">
-                  {([
-                    { key: 'moneyBonus' as const, icon: '💰', label: 'Money', color: 'text-green-400', val: bonuses.moneyBonus },
-                    { key: 'rockDamageBonus' as const, icon: '💥', label: 'Damage', color: 'text-red-400', val: bonuses.rockDamageBonus },
-                    { key: 'clickSpeedBonus' as const, icon: '⚡', label: 'Click Speed', color: 'text-cyan-400', val: bonuses.clickSpeedBonus },
-                    { key: 'couponBonus' as const, icon: '🎟️', label: 'Lottery', color: 'text-amber-400', val: bonuses.couponBonus },
-                    { key: 'minerDamageBonus' as const, icon: '⛏️', label: 'Miner Dmg', color: 'text-orange-400', val: bonuses.minerDamageBonus },
-                    { key: 'minerSpeedBonus' as const, icon: '🏃', label: 'Miner Spd', color: 'text-sky-400', val: bonuses.minerSpeedBonus },
-                    { key: 'luckBonus' as const, icon: '🍀', label: 'Luck', color: 'text-emerald-400', val: bonuses.luckBonus },
-                    { key: 'dropChanceBonus' as const, icon: '🎯', label: 'Drop Chance', color: 'text-violet-400', val: bonuses.dropChanceBonus },
-                  ]).filter(s => s.val > 0).map(s => (
-                    <div key={s.key}>
-                      <button
-                        onClick={() => setExpandedBonusStat(expandedBonusStat === s.key ? null : s.key)}
-                        className={`w-full text-left text-[11px] ${s.color} hover:brightness-125 transition-all flex items-center justify-between`}
-                      >
-                        <span>{s.icon} +{s.key === 'luckBonus' || s.key === 'dropChanceBonus' ? s.val.toFixed(1) : `${(s.val * 100).toFixed(0)}%`} {s.label}</span>
-                        <span className="text-[9px] text-gray-500">{expandedBonusStat === s.key ? '▼' : '▶'}</span>
-                      </button>
-                      {expandedBonusStat === s.key && (
-                        <div className="ml-4 mt-1 mb-2 p-2 rounded-lg bg-gray-900/80 border border-gray-700/40 space-y-1">
-                          {getBonusBreakdown(s.key).map((entry, i) => (
-                            <div key={i} className="flex justify-between text-[10px]">
-                              <span className="text-gray-300">{entry.source}</span>
-                              <span className={entry.value >= 0 ? 'text-green-400' : 'text-red-400'}>
-                                {entry.value >= 0 ? '+' : ''}{s.key === 'luckBonus' || s.key === 'dropChanceBonus' ? entry.value.toFixed(1) : `${(entry.value * 100).toFixed(0)}%`}
-                              </span>
-                            </div>
-                          ))}
-                          {getBonusBreakdown(s.key).length === 0 && (
-                            <div className="text-[10px] text-gray-500">No sources found</div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Path Progress / Side Selection */}
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs font-bold text-white">
-                {needsPathChoice ? 'Choose Your Side' : 'Path Progress'}
+            <div className="rounded-sm px-3 py-2 border-4 border-double border-[var(--cc-brown)] bg-[#fffdf8]/95 shadow-[inset_0_3px_0_rgba(255,255,255,0.65)]">
+              <span className="text-[10px] text-[#5c4332] uppercase tracking-[0.2em] block font-semibold opacity-95">Mining</span>
+              <span className="block text-base font-black text-black leading-tight drop-shadow-[0_1px_0_rgba(255,255,240,1)] mt-1">
+                {gameState.isBlocked ? 'Blocked' : currentRock.name}
+                <span className="text-[13px] text-[#5c4332] font-bold ml-2">Lv.{currentRock.id}</span>
               </span>
-              {needsPathChoice && (
-                <span className="text-[10px] text-amber-400 animate-pulse">Pick a side to start playing!</span>
+              {gameState.minerCount > 0 && (
+                <span className="block text-[11px] text-[#2d6b2d] font-bold mt-1">⛏️ {formatNumber(minerDps)} / s</span>
               )}
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    if (needsPathChoice) setConfirmingPath('light');
-                    else if (gameState.chosenPath === 'light') setShowSideLevel(true);
-                  }}
-                  disabled={!needsPathChoice && gameState.chosenPath !== 'light'}
-                  className={`flex-1 flex flex-col items-center gap-1 rounded-lg border px-2 py-2 transition-all ${
-                    gameState.chosenPath === 'light'
-                      ? 'border-yellow-600/50 bg-yellow-900/20 hover:border-yellow-400 hover:bg-yellow-900/30 cursor-pointer'
-                      : needsPathChoice
-                        ? 'border-yellow-600/40 bg-yellow-900/10 hover:border-yellow-400 hover:bg-yellow-900/30 hover:scale-105 cursor-pointer'
-                        : 'border-gray-700/30 bg-gray-800/30 opacity-50 cursor-default'
-                  }`}
-                >
-                  <span className="text-base">☀️</span>
-                  <span className={`text-[10px] ${gameState.chosenPath === 'light' ? 'text-yellow-300' : needsPathChoice ? 'text-yellow-400' : 'text-gray-500'}`}>Light</span>
-                  <span className={`text-xs font-bold ${gameState.chosenPath === 'light' ? 'text-yellow-400' : 'text-gray-600'}`}>
-                    {gameState.chosenPath === 'light' ? `Lv.${gameState.sideLevel || 1}` : needsPathChoice ? 'Pick' : 'Locked'}
-                  </span>
-                </button>
-                <button
-                  onClick={() => {
-                    if (needsPathChoice) setConfirmingPath('darkness');
-                    else if (gameState.chosenPath === 'darkness') setShowSideLevel(true);
-                  }}
-                  disabled={!needsPathChoice && gameState.chosenPath !== 'darkness'}
-                  className={`flex-1 flex flex-col items-center gap-1 rounded-lg border px-2 py-2 transition-all ${
-                    gameState.chosenPath === 'darkness'
-                      ? 'border-purple-600/50 bg-purple-900/20 hover:border-purple-400 hover:bg-purple-900/30 cursor-pointer'
-                      : needsPathChoice
-                        ? 'border-purple-600/40 bg-purple-900/10 hover:border-purple-400 hover:bg-purple-900/30 hover:scale-105 cursor-pointer'
-                        : 'border-gray-700/30 bg-gray-800/30 opacity-50 cursor-default'
-                  }`}
-                >
-                  <span className="text-base">🌙</span>
-                  <span className={`text-[10px] ${gameState.chosenPath === 'darkness' ? 'text-purple-300' : needsPathChoice ? 'text-purple-400' : 'text-gray-500'}`}>Darkness</span>
-                  <span className={`text-xs font-bold ${gameState.chosenPath === 'darkness' ? 'text-purple-400' : 'text-gray-600'}`}>
-                    {gameState.chosenPath === 'darkness' ? `Lv.${gameState.sideLevel || 1}` : needsPathChoice ? 'Pick' : 'Locked'}
-                  </span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* ========== CENTER PANEL ========== */}
-          <div className="grow flex flex-col items-center justify-center relative overflow-hidden">
-            {/* Rock Level heading */}
-            <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20">
-              <span className="text-2xl font-bold text-white drop-shadow-lg">Rock Level {currentRock.id}</span>
             </div>
 
-            {/* Rock glow */}
-            <div className="absolute w-96 h-96 rounded-full bg-amber-500/15 blur-3xl animate-pulse pointer-events-none" />
+            <div className="relative flex-shrink-0 flex flex-col items-center">
+              <div className="w-72 h-72 max-w-full rounded-full bg-[radial-gradient(circle_at_center,rgba(255,230,176,0.55)_0%,transparent_65%)] blur-3xl animate-pulse pointer-events-none absolute top-2 left-1/2 -translate-x-1/2" />
 
-            {/* Pickaxe + Rock */}
-            <div className="relative flex items-center">
-              <div
-                className={`relative w-32 h-32 xl:w-40 xl:h-40 transition-transform origin-bottom-right -mr-8 z-50 ${isSwinging ? 'rotate-[30deg]' : 'rotate-0'}`}
-                style={{ transitionDuration: '0.15s' }}
-              >
-                <Image key={`pickaxe-${currentPickaxe.id}`} src={currentPickaxe.image} alt={currentPickaxe.name} fill unoptimized className="object-contain drop-shadow-2xl pointer-events-none" style={{ transform: 'rotate(-30deg)' }} />
-              </div>
+              <div className="relative flex items-center justify-center">
+                <div
+                  className={`relative w-28 h-28 xl:w-32 xl:h-32 transition-transform origin-bottom-right -mr-4 xl:-mr-6 z-50 ${isSwinging ? 'rotate-[30deg]' : 'rotate-0'}`}
+                  style={{ transitionDuration: '0.15s' }}
+                >
+                  <Image key={`pickaxe-${currentPickaxe.id}`} src={currentPickaxe.image} alt={currentPickaxe.name} fill unoptimized className="object-contain drop-shadow-2xl pointer-events-none" style={{ transform: 'rotate(-30deg)' }} />
+                </div>
 
-              <div
-                ref={rockRef}
-                onClick={handleMine}
-                onTouchEnd={handleMine}
-                className="relative z-40 w-72 h-72 xl:w-80 xl:h-80 cursor-pointer touch-manipulation flex items-center justify-center select-none pointer-events-auto"
-                style={{ WebkitTapHighlightColor: 'transparent' }}
-              >
-                <div className={`relative w-64 h-64 xl:w-72 xl:h-72 transition-transform hover:scale-105 active:scale-95 ${rockShake ? 'animate-shake' : ''} ${rockBroken ? 'animate-rock-break' : ''}`}>
-                  <Image
-                    key={`rock-${getExoticRockImage || currentRock.id}-${gameState.isBlocked ? 'bedrock' : currentRock.image}`}
-                    src={gameState.isBlocked ? '/game/rocks/coal.png' : getExoticRockImage || currentRock.image}
-                    alt={gameState.isBlocked ? 'Bedrock (Blocked)' : (gameState.exoticRock?.active ? 'Exotic Rock' : currentRock.name)}
-                    fill unoptimized
-                    className={`object-contain drop-shadow-2xl transition-all pointer-events-none ${rockBroken ? 'scale-110 brightness-150' : ''} ${gameState.isBlocked ? 'grayscale brightness-50' : ''}`}
-                  />
-                  {rockBroken && <div className="absolute inset-0 bg-white/50 rounded-full animate-flash-out pointer-events-none" />}
-                  {moneyPopups.map((p) => (
-                    <div key={p.id} className="absolute pointer-events-none animate-float-up text-yellow-400 font-bold text-2xl" style={{ left: p.x, top: p.y, textShadow: '2px 2px 4px rgba(0,0,0,0.8)' }}>+${formatNumber(p.amount)}</div>
-                  ))}
-                  {particles.map((p) => (
-                    <div key={p.id} className="absolute w-2 h-2 bg-amber-600 rounded-full pointer-events-none animate-particle" style={{ left: p.x, top: p.y, '--vx': `${p.vx}px`, '--vy': `${p.vy}px` } as React.CSSProperties} />
-                  ))}
-                  {couponPopups.map((p) => (
-                    <div key={p.id} className="absolute left-1/2 -translate-x-1/2 -top-12 pointer-events-none animate-bounce-in">
-                      <span className="text-amber-400 font-bold text-sm drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">+1 🎟️</span>
-                    </div>
-                  ))}
+                <div
+                  ref={rockRef}
+                  onClick={handleMine}
+                  onTouchEnd={handleMine}
+                  className="relative z-40 w-56 h-56 xl:w-64 xl:h-64 cursor-pointer touch-manipulation flex items-center justify-center select-none pointer-events-auto"
+                  style={{ WebkitTapHighlightColor: 'transparent' }}
+                >
+                  <div className={`relative w-52 h-52 xl:w-60 xl:h-60 transition-transform hover:scale-105 active:scale-95 ${rockShake ? 'animate-shake' : ''} ${rockBroken ? 'animate-rock-break' : ''}`}>
+                    <Image
+                      key={`rock-${getExoticRockImage || currentRock.id}-${gameState.isBlocked ? 'bedrock' : currentRock.image}`}
+                      src={gameState.isBlocked ? '/game/rocks/coal.png' : getExoticRockImage || currentRock.image}
+                      alt={gameState.isBlocked ? 'Bedrock (Blocked)' : (gameState.exoticRock?.active ? 'Exotic Rock' : currentRock.name)}
+                      fill unoptimized
+                      className={`object-contain drop-shadow-2xl transition-all pointer-events-none ${rockBroken ? 'scale-110 brightness-150' : ''} ${gameState.isBlocked ? 'grayscale brightness-50' : ''}`}
+                    />
+                    {rockBroken && <div className="absolute inset-0 bg-white/50 rounded-full animate-flash-out pointer-events-none" />}
+                    {moneyPopups.map((p) => (
+                      <div key={p.id} className="absolute pointer-events-none animate-float-up font-black text-lg text-[#0a5c0a]" style={{ left: p.x, top: p.y, textShadow: '1px 1px 0 #fff, 2px 2px 3px rgba(0,0,0,0.25)' }}>+${formatNumber(p.amount)}</div>
+                    ))}
+                    {particles.map((p) => (
+                      <div key={p.id} className="absolute w-2 h-2 bg-amber-600 rounded-full pointer-events-none animate-particle" style={{ left: p.x, top: p.y, '--vx': `${p.vx}px`, '--vy': `${p.vy}px` } as React.CSSProperties} />
+                    ))}
+                    {couponPopups.map((p) => (
+                      <div key={p.id} className="absolute left-1/2 -translate-x-1/2 -top-12 pointer-events-none animate-bounce-in">
+                        <span className="text-amber-400 font-bold text-sm drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">+1 🎟️</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* HP Bar + Next Rock (inside center, below rock) */}
-            <div className="w-full max-w-lg px-4 mt-4 space-y-2 z-20">
-              {/* Rock HP */}
-              <div className="bg-black/60 rounded-lg px-3 py-2">
+            {/* HP Bar + progression — CC progress strip */}
+            <div className="w-full space-y-2 z-10">
+              <div className="rounded-sm px-3 py-2 border-2 border-[#8b6914] bg-[#fef9f0] shadow-[inset_0_2px_4px_rgba(0,0,0,0.08)]">
                 <div className="flex justify-between items-center mb-1">
-                  <span className="text-sm font-bold text-white">HP</span>
-                  <span className="text-xs text-gray-200">{formatNumber(currentHP)} / {formatNumber(scaledRockMaxHP)}</span>
+                  <span className="text-[11px] font-black text-[#2c1810]">HP</span>
+                  <span className="text-[11px] font-bold text-[#3d2918]">{formatNumber(currentHP)} / {formatNumber(scaledRockMaxHP)}</span>
                 </div>
-                <div className="w-full h-4 bg-gray-900 rounded-full overflow-hidden border border-gray-700">
-                  <div className="h-full bg-gradient-to-r from-amber-600 to-amber-500 shadow-[0_0_10px_rgba(234,88,12,0.5)] transition-all duration-150" style={{ width: `${progressPercent}%` }} />
+                <div className="w-full h-4 bg-[#c9a87a] rounded-sm overflow-hidden border-2 border-[#5c3317] shadow-[inset_0_3px_6px_rgba(0,0,0,0.2)]">
+                  <div className="h-full bg-gradient-to-b from-[#f4c430] to-[#d4a017] border-r-2 border-[#8b6914] transition-all duration-150 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]" style={{ width: `${progressPercent}%` }} />
                 </div>
               </div>
 
-              {/* Next Rock */}
               {nextRockInfo.nextRock && (
-                <div className="bg-black/60 rounded-lg px-3 py-2">
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-xs text-white font-medium">Next: {nextRockInfo.nextRock.name}</span>
-                    <span className="text-xs text-gray-200">{Math.round(nextRockInfo.progress)}% — {formatNumber(nextRockInfo.clicksNeeded)} clicks left</span>
+                <div className="rounded-sm px-3 py-2 border-2 border-[#6b8f4a] bg-[#f4f9ef] shadow-[inset_0_2px_4px_rgba(0,0,0,0.06)]">
+                  <div className="flex justify-between items-center mb-1 gap-2">
+                    <span className="text-[11px] font-black text-[#1a3d1a] truncate">Next · {nextRockInfo.nextRock.name}</span>
+                    <span className="text-[10px] font-bold text-[#3d5c2a] whitespace-nowrap">{Math.round(nextRockInfo.progress)}%</span>
                   </div>
-                  <div className="w-full h-3 bg-gray-900 rounded-full overflow-hidden border border-gray-700">
-                    <div className="h-full bg-gradient-to-r from-green-600 to-emerald-500 transition-all duration-150" style={{ width: `${nextRockInfo.progress}%` }} />
+                  <div className="w-full h-2.5 bg-[#a8c68a] rounded-sm overflow-hidden border-2 border-[#4a6b32]">
+                    <div className="h-full bg-gradient-to-b from-[#8fd65a] to-[#4a9c2d] shadow-[inset_0_1px_0_rgba(255,255,255,0.45)] transition-all duration-150" style={{ width: `${nextRockInfo.progress}%` }} />
                   </div>
+                  <span className="block text-[9px] font-bold text-[#5c4332] mt-1">{formatNumber(nextRockInfo.clicksNeeded)} clicks to go</span>
                 </div>
               )}
               {!nextRockInfo.nextRock && (
-                <div className="text-center py-1 bg-black/60 rounded-lg px-3">
-                  <span className="text-yellow-400 font-bold text-xs">🏆 MAX ROCK UNLOCKED!</span>
+                <div className="text-center py-2 rounded-sm px-3 border-4 border-double border-[var(--cc-brown)] bg-[#fff8e8]">
+                  <span className="text-[11px] font-black text-[#7a4a00]">🏆 MAX ROCK</span>
                 </div>
               )}
 
-              {/* Autoclicker toggle */}
-              <div className="flex items-center justify-center gap-3 pt-1 bg-black/50 backdrop-blur-sm rounded-full px-4 py-1.5">
-                <span className="text-xs text-white font-medium">Auto-clicker</span>
+              <div className="flex items-center justify-center gap-2 py-2 rounded-sm px-3 border-2 border-[#8b6914] bg-[#ebe0cc] shadow-[inset_0_2px_0_rgba(255,255,240,0.8)]">
+                <span className="text-[11px] font-black text-[#2c1810]">Auto-clicker</span>
                 {gameState.hasAutoclicker ? (
-                  <button onClick={toggleAutoclicker} className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${gameState.autoclickerEnabled ? 'bg-cyan-600 text-white shadow-cyan-500/30 shadow-lg' : 'bg-gray-800 text-gray-300 border border-gray-600'}`}>
+                  <button type="button" onClick={toggleAutoclicker} className={`px-3 py-1 rounded-sm text-[11px] font-black border-2 border-t-[#f5f5f5] border-l-[#f5f5f5] border-r-[#284848] border-b-[#284848] transition-all ${gameState.autoclickerEnabled ? 'bg-[#4a9ea4] text-white' : 'bg-[#cfd8d9] text-[#2c1810]'}`}>
                     {gameState.autoclickerEnabled ? 'ON' : 'OFF'}
                   </button>
                 ) : (
-                  <button onClick={buyAutoclicker} disabled={gameState.yatesDollars < scaledAutoclickerCost} className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${gameState.yatesDollars >= scaledAutoclickerCost ? 'bg-cyan-700 text-cyan-100 hover:bg-cyan-600' : 'bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700'}`}>
+                  <button type="button" onClick={buyAutoclicker} disabled={gameState.yatesDollars < scaledAutoclickerCost} className={`px-3 py-1 rounded-sm text-[11px] font-black border-2 border-t-[#fff] border-l-[#fff] border-r-[#4a3010] border-b-[#4a3010] transition-all ${gameState.yatesDollars >= scaledAutoclickerCost ? 'bg-[var(--cc-buy)] text-[#2c1810] hover:brightness-105' : 'bg-[#b8a896] text-[#6b5c4a] cursor-not-allowed'}`}>
                     Buy ${formatNumber(scaledAutoclickerCost)}
                   </button>
                 )}
               </div>
             </div>
+
+            <div className="h-0.5 bg-[var(--cc-brown)]/35 rounded-full" />
+
+            {/* Achievements modal host only */}
+            <AchievementsPanel isTrinketIndexOpen={showTrinketIndex} setIsTrinketIndexOpen={setShowTrinketIndex} forceOpen={forceOpenAchievements} onForceOpenHandled={() => setForceOpenAchievements(false)} hidden />
+
+            {totalCoupons > 0 && (
+              <div className="rounded-sm px-3 py-2 border-2 border-[#6b3d7a] bg-[#faf5ff] shadow-[inset_0_2px_0_rgba(255,255,255,0.9)]">
+                <span className="text-[10px] text-[#5c4332] font-black uppercase tracking-wider">Coupons</span>
+                <div className="flex flex-wrap items-center gap-2 mt-1">
+                  {gameState.coupons.discount30 > 0 && <div className="flex items-center gap-0.5 border border-[#2d6b2d] bg-[#e8f5e8] px-1.5 py-0.5 rounded-sm"><span className="text-[10px] text-[#0d4d0d] font-black">30%</span><span className="text-[#1a5c1a] font-black text-[10px]">×{gameState.coupons.discount30}</span></div>}
+                  {gameState.coupons.discount50 > 0 && <div className="flex items-center gap-0.5 border border-[#1e4f7a] bg-[#e8f4fc] px-1.5 py-0.5 rounded-sm"><span className="text-[10px] text-[#0d4a7a] font-black">50%</span><span className="text-[#124a72] font-black text-[10px]">×{gameState.coupons.discount50}</span></div>}
+                  {gameState.coupons.discount100 > 0 && <div className="flex items-center gap-0.5 border border-[#8b6914] bg-[#fff8dc] px-1.5 py-0.5 rounded-sm"><span className="text-[10px] text-[#8b6914] font-black">FREE</span><span className="text-[#6b4810] font-black text-[10px]">×{gameState.coupons.discount100}</span></div>}
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* ========== RIGHT PANEL — Buildings (Collapsible) ========== */}
-          {/* Collapse toggle arrow */}
-          <button
-            onClick={() => setRightPanelCollapsed(prev => !prev)}
-            className="absolute right-0 top-1/2 -translate-y-1/2 z-30 bg-gray-800/90 border border-gray-700/50 rounded-l-lg px-1 py-4 text-gray-400 hover:text-white hover:bg-gray-700/90 transition-all"
-            style={{ right: rightPanelCollapsed ? 0 : 320 }}
-          >
-            {rightPanelCollapsed ? '◀' : '▶'}
-          </button>
-          <div className={`${rightPanelCollapsed ? 'w-0 overflow-hidden opacity-0' : 'w-80'} flex-none flex flex-col self-stretch overflow-y-auto bg-gray-950/90 backdrop-blur-md border-l border-gray-700/40 panel-no-scroll transition-all duration-300`}>
-            {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700/30">
-              <span className="text-sm font-bold text-white">Buildings</span>
-              <div className="flex items-center gap-2">
-                {gameState.stokens > 0 && (
-                  <span className="text-[10px] font-bold text-blue-400 bg-blue-900/30 px-1.5 py-0.5 rounded">💎 {gameState.stokens}</span>
-                )}
-                {gameState.lotteryTickets > 0 && (
-                  <span className="text-[10px] font-bold text-amber-400 bg-amber-900/30 px-1.5 py-0.5 rounded">🎟️ {gameState.lotteryTickets}</span>
-                )}
-              </div>
+          {/* ========== CENTER — Bank + classic CC store list ========== */}
+          <div className="grow flex flex-col min-h-0 min-w-0 relative overflow-hidden bg-[linear-gradient(180deg,#f4e4c8_0%,#eccd9b_40%,#dfb87a_88%,#cfa66a_100%)] border-x-4 border-[var(--cc-brown)] shadow-[inset_0_12px_28px_rgba(255,248,220,0.65)]">
+            <div className="shrink-0 mx-3 mt-3 rounded-sm border-4 border-double border-[var(--cc-brown)] bg-[#fffef9] px-4 py-3 shadow-[inset_0_3px_0_rgba(255,255,255,0.9),0_4px_14px_rgba(60,35,12,0.2)]">
+              <span className="text-[11px] font-black text-[#5c4332] uppercase tracking-[0.25em] text-center block">Bank</span>
+              <p className="text-center text-4xl xl:text-[2.75rem] font-black text-black mt-1 leading-none tracking-tight" style={{ textShadow: '0 2px 0 #fff, 0 3px 8px rgba(70,42,14,0.15)' }}>
+                ${formatNumber(gameState.yatesDollars)}
+              </p>
             </div>
 
-            {/* Building List */}
-            <div className="flex-1 flex flex-col gap-2 p-3 overflow-y-auto panel-no-scroll">
+            {/* Store title bar */}
+            <div className="shrink-0 mx-0 mt-1 px-2 py-1.5 flex items-center gap-2 flex-wrap bg-[linear-gradient(180deg,#c9a06a_0%,#a67c47_100%)] border-y-2 border-[#5c3317] shadow-[inset_0_1px_0_rgba(255,230,176,0.55)]">
+              <span className="text-[15px] font-black text-black drop-shadow-[0_1px_0_rgba(255,240,210,1)] uppercase tracking-[0.15em]" style={{ textShadow: '0 2px 0 rgba(139,105,61,0.35)' }}>
+                Store
+              </span>
+              <div className="flex items-center gap-1.5 flex-wrap font-sans">
+                <span className="text-[10px] font-black text-black bg-[#ffeec9] px-2 py-0.5 rounded-sm border border-[#8b6914] shadow-[inset_0_1px_0_#fff]">
+                  Lottery {gameState.lotteryTickets.toLocaleString()} 🎟️
+                </span>
+                <span className="text-[10px] font-black text-[#0d3d5c] bg-[#e8f4ff] px-2 py-0.5 rounded-sm border border-[#2a5f8f] shadow-[inset_0_1px_0_#fff]">
+                  Stokens {gameState.stokens} 💎
+                </span>
+              </div>
+              <span className="text-[11px] font-bold text-[#3d2918] ml-auto opacity-95 hidden xl:inline truncate italic max-w-[12rem]">Mine fast. Spend faster.</span>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto panel-no-scroll pb-5 pt-0 border-t-4 border-[#9c7248] shadow-[inset_0_4px_12px_rgba(80,50,22,0.12)] bg-[linear-gradient(180deg,rgba(255,248,230,0.4)_0%,transparent_140px)]">
               {availableBuildings.map(building => {
                 const count = getBuildingCount(building.id);
                 const cost = getBuildingCostForType(building.id);
@@ -1079,15 +967,19 @@ export default function MiningGame({ onExit }: MiningGameProps) {
                 const isMaxed = building.maxCount !== -1 && count >= building.maxCount;
                 const isClickable = ['temple', 'wizard_tower', 'bank', 'shipment'].includes(building.id) && count > 0;
 
+                const rowBg =
+                  count > 0
+                    ? 'bg-[#fffdf6] hover:bg-[#fffef9]'
+                    : canAfford
+                      ? 'bg-[#fff0c8] hover:bg-[#fff5d6]'
+                      : 'bg-[#d4c4a8]/95';
+
                 return (
                   <div
                     key={building.id}
-                    className={`flex items-center gap-3 rounded-lg border px-3 py-3 transition-colors ${
-                      count > 0
-                        ? 'border-gray-700/50 bg-gray-800/50 hover:border-amber-500/40 hover:bg-gray-800/70 cursor-pointer'
-                        : canAfford
-                          ? 'border-gray-700/30 bg-gray-800/30 hover:border-amber-500/30 cursor-pointer'
-                          : 'border-gray-700/20 bg-gray-900/40 opacity-60'
+                    role="presentation"
+                    className={`flex items-stretch gap-2.5 border-b-[3px] border-[#b8956a] px-2.5 py-2 transition-colors shadow-[inset_0_1px_0_rgba(255,255,250,0.65)] font-sans ${rowBg} ${
+                      canAfford || count > 0 ? '' : 'brightness-[0.97]'
                     }`}
                     onClick={() => {
                       if (isClickable) {
@@ -1098,83 +990,194 @@ export default function MiningGame({ onExit }: MiningGameProps) {
                       }
                     }}
                   >
-                    {/* Building Image */}
-                    <div className="w-12 h-12 flex-none rounded-md border border-gray-700/50 bg-gray-900/60 flex items-center justify-center overflow-hidden">
-                      <Image src={building.image} alt={building.name} width={48} height={48} unoptimized className="object-contain" style={{ imageRendering: 'pixelated' }} />
+                    <div className="w-12 h-12 flex-none self-center rounded-sm border-[3px] border-[#5c3317] bg-[linear-gradient(180deg,#fdfaf3,#e8d8bc)] flex items-center justify-center overflow-hidden shadow-[inset_0_3px_6px_rgba(255,255,255,0.75),inset_0_-2px_6px_rgba(0,0,0,0.12)]">
+                      <Image src={building.image} alt={building.name} width={40} height={40} unoptimized className="object-contain drop-shadow-[0_1px_0_rgba(255,255,255,1)]" style={{ imageRendering: 'pixelated' }} />
                     </div>
-
-                    {/* Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-sm font-bold text-white">{building.name}</span>
-                        {isClickable && <span className="text-[9px] text-yellow-400">⚙️</span>}
+                    <div className="flex-1 min-w-0 flex flex-col justify-center">
+                      <div className="flex items-center gap-1 flex-wrap leading-tight">
+                        <span className="text-[15px] font-black text-black drop-shadow-[0_1px_0_rgba(255,254,246,1)]">{building.name}</span>
+                        {count > 0 && (
+                          <span className="text-[11px] font-black text-[#6b5344]">· {count}</span>
+                        )}
+                        {isClickable && (
+                          <span className="text-[9px] font-black uppercase text-[#8b6914] border border-[#8b6914] bg-[#fff8dc] px-1 rounded-[1px]">Open</span>
+                        )}
                       </div>
-                      {count > 0 && (
-                        <span className="text-[11px] text-amber-400">Level {count}</span>
-                      )}
-                      {count === 0 && (
-                        <p className="text-[10px] text-gray-500 overflow-hidden text-ellipsis" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{building.description}</p>
+                      {count > 0 ? (
+                        <span className="text-[11px] text-[#2d6b2d] font-bold mt-0.5">Purchased!</span>
+                      ) : (
+                        <p className="text-[10px] text-[#4a3928] mt-1 leading-snug line-clamp-2 font-semibold">{building.description}</p>
                       )}
                     </div>
-
-                    {/* Cost / Buy */}
-                    <div className="flex flex-col items-end gap-1 flex-none">
+                    <div className="flex flex-col items-end gap-1 flex-none justify-center pr-1 min-w-[4.5rem]">
                       {!isMaxed ? (
                         <>
-                          <span className={`text-[11px] font-bold ${canAfford ? 'text-yellow-400' : 'text-gray-500'}`}>
+                          <span className={`text-[12px] font-black ${canAfford ? 'text-[#069900]' : 'text-[#7a6a55]'}`}>
                             ${formatNumber(cost)}
                           </span>
                           <button
+                            type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               buyBuilding(building.id);
                             }}
                             disabled={!canAfford}
-                            className={`px-2.5 py-1 rounded text-[10px] font-bold transition-all ${
+                            className={`w-full min-w-[3.5rem] px-2 py-1 rounded-sm text-[11px] font-black uppercase tracking-wide border-2 border-t-[#fffefc] border-l-[#fffefc] border-r-[#4a3018] border-b-[#4a3018] shadow-[inset_0_-2px_0_rgba(0,0,0,0.08)] transition-all active:border-t-transparent active:border-l-transparent active:translate-x-px active:translate-y-px ${
                               canAfford
-                                ? 'bg-amber-600 hover:bg-amber-500 text-white active:scale-95'
-                                : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                                ? 'bg-[linear-gradient(180deg,#ffe97a,var(--cc-buy))] text-black hover:brightness-[1.03]'
+                                : 'bg-[#a89880] border-t-[#c4b8a8] border-l-[#c4b8a8] text-[#5c5348] cursor-not-allowed shadow-none opacity-95'
                             }`}
                           >
                             Buy
                           </button>
                         </>
                       ) : (
-                        <span className="text-[10px] text-green-400 font-bold">OWNED</span>
+                        <span className="text-[11px] text-[#0d5c26] font-black uppercase text-right">Owned</span>
                       )}
                     </div>
                   </div>
                 );
               })}
             </div>
+          </div>
 
-            {/* Trinket Shop — below buildings */}
-            <div className="border-t border-gray-700/30 px-4 py-3">
+          {/* ========== RIGHT — Progress sidebar (matching CC panels) ========== */}
+          <button
+            type="button"
+            onClick={() => setRightPanelCollapsed(prev => !prev)}
+            className="absolute right-0 top-1/2 -translate-y-1/2 z-30 rounded-l-md border-2 border-r-0 border-[var(--cc-brown)] bg-[#e8d4b0] hover:bg-[#f0dfc0] px-1 py-4 text-black font-black text-xs shadow-[inset_2px_0_0_rgba(255,255,255,0.5)]"
+            style={{ right: rightPanelCollapsed ? 0 : 320 }}
+          >
+            {rightPanelCollapsed ? '◀' : '▶'}
+          </button>
+          <div className={`${rightPanelCollapsed ? 'w-0 overflow-hidden opacity-0' : 'w-80'} flex-none flex flex-col self-stretch min-h-0 overflow-hidden bg-[linear-gradient(160deg,var(--cc-panel)_0%,#ebcfa6_58%,var(--cc-bg)_100%)] border-l-4 border-[var(--cc-brown)] panel-no-scroll transition-all duration-300`}>
+            <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto panel-no-scroll p-3 border-b-[3px] border-[var(--cc-brown)]/40">
+              <div className="flex justify-center shrink-0 [&_button]:rounded-sm [&_button]:border-2 [&_button]:border-t-[#f5dde8] [&_button]:border-l-[#f5dde8] [&_button]:border-r-[#4a2035] [&_button]:border-b-[#4a2035] [&_button]:shadow-[inset_0_-2px_0_rgba(0,0,0,0.12)] [&_button]:font-black">
+                <PrestigeButton />
+              </div>
+
+              {/* Path */}
+              <div className="flex flex-col gap-1.5 shrink-0">
+                <span className="text-[11px] font-black text-black">
+                  {needsPathChoice ? 'Choose your side' : 'Light / Dark'}
+                </span>
+                {needsPathChoice && (
+                  <span className="text-[10px] text-[#8b6914] font-black animate-pulse">Pick before you crumble!</span>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (needsPathChoice) setConfirmingPath('light');
+                      else if (gameState.chosenPath === 'light') setShowSideLevel(true);
+                    }}
+                    disabled={!needsPathChoice && gameState.chosenPath !== 'light'}
+                    className={`flex-1 flex flex-col items-center gap-0.5 rounded-sm border-[3px] px-2 py-2 shadow-[inset_0_2px_0_rgba(255,255,255,0.5)] transition-all ${
+                      gameState.chosenPath === 'light'
+                        ? 'border-[#b8952a] bg-[#fffbeb] hover:brightness-[1.02] cursor-pointer'
+                        : needsPathChoice
+                          ? 'border-[#d4bc6a] bg-[#fff8dc] hover:brightness-[1.03] cursor-pointer'
+                          : 'border-[#a89880] bg-[#dfd5c8] opacity-65 cursor-default'
+                    }`}
+                  >
+                    <span className="text-base leading-none">☀️</span>
+                    <span className={`text-[10px] font-black ${gameState.chosenPath === 'light' ? 'text-[#8b6914]' : needsPathChoice ? 'text-[#a67c00]' : 'text-[#6b5c48]'}`}>Light</span>
+                    <span className={`text-[11px] font-black ${gameState.chosenPath === 'light' ? 'text-black' : 'text-[#5c5348]'}`}>
+                      {gameState.chosenPath === 'light' ? `Lv.${gameState.sideLevel || 1}` : needsPathChoice ? 'Pick' : 'Locked'}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (needsPathChoice) setConfirmingPath('darkness');
+                      else if (gameState.chosenPath === 'darkness') setShowSideLevel(true);
+                    }}
+                    disabled={!needsPathChoice && gameState.chosenPath !== 'darkness'}
+                    className={`flex-1 flex flex-col items-center gap-0.5 rounded-sm border-[3px] px-2 py-2 shadow-[inset_0_2px_0_rgba(255,255,255,0.35)] transition-all ${
+                      gameState.chosenPath === 'darkness'
+                        ? 'border-[#5c4488] bg-[#efe8fb] hover:brightness-[1.02] cursor-pointer'
+                        : needsPathChoice
+                          ? 'border-[#8b74a8] bg-[#f5f0ff] hover:brightness-[1.03] cursor-pointer'
+                          : 'border-[#9a8aa8] bg-[#e8e0f0] opacity-65 cursor-default'
+                    }`}
+                  >
+                    <span className="text-base leading-none">🌙</span>
+                    <span className={`text-[10px] font-black ${gameState.chosenPath === 'darkness' ? 'text-[#4a2870]' : needsPathChoice ? 'text-[#5c4490]' : 'text-[#6b6280]'}`}>Darkness</span>
+                    <span className={`text-[11px] font-black ${gameState.chosenPath === 'darkness' ? 'text-black' : 'text-[#5c5480]'}`}>
+                      {gameState.chosenPath === 'darkness' ? `Lv.${gameState.sideLevel || 1}` : needsPathChoice ? 'Pick' : 'Locked'}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {gameState.prestigeCount > 0 && (
+                <div className="shrink-0 font-sans px-1">
+                  <div className="flex justify-between items-center mb-0.5">
+                    <span className="text-[9px] font-black uppercase text-[#4a3560]">Side path</span>
+                    <span className="text-[9px] font-bold text-[#5c4488]">
+                      {needsPathChoice ? '—' : `${sidePathProgressPct}%`}
+                    </span>
+                  </div>
+                  <div className="w-full h-2.5 rounded-sm bg-[#dcd0ec] border-2 border-[#5c4488]/80 shadow-[inset_0_1px_2px_rgba(0,0,0,0.12)] overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-b from-[#c4a0e8] to-[#7a4cae] shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] transition-all duration-200"
+                      style={{ width: `${needsPathChoice ? 0 : sidePathProgressPct}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Active Buffs */}
+              {activeEffects.length > 0 && (
+                <div className="flex flex-col gap-2 shrink-0">
+                  <span className="text-[11px] font-black text-black">Buffs</span>
+                  {activeEffects.map(e => (
+                    <div
+                      key={e.id}
+                      className={`flex items-center gap-2 rounded-sm border-2 px-3 py-1.5 font-sans shadow-[inset_0_2px_0_rgba(255,255,255,0.45)] ${
+                        e.type === 'debuff' ? 'border-[#a04040] bg-[#fde8e8]' : 'border-[#8b6914] bg-[#fff8e8]'
+                      }`}
+                    >
+                      <span className="text-sm leading-none">{e.icon}</span>
+                      <span className={`grow text-[11px] font-semibold ${e.type === 'debuff' ? 'text-[#7a1515]' : 'text-[#4a3920]'}`}>{e.name}</span>
+                      <span className={`text-[11px] font-black ${e.type === 'debuff' ? 'text-[#b02020]' : 'text-[#8b6914]'}`}>{fmtTime(e.timeLeft)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Trinket slot + shop — slot sits directly above shop entry */}
+            <div className="shrink-0 border-t-[3px] border-[var(--cc-brown)] bg-[#f2e6d4] px-4 py-2 flex flex-col gap-2">
+              <div className="w-full flex justify-center font-sans">
+                <TrinketSlot />
+              </div>
               <TrinketShopButton hidden={showTrinketIndex} inline onOpen={() => setTrinketShopOpen(true)} />
             </div>
 
             {/* Miners Section */}
-            <div className="border-t border-gray-700/30 px-4 py-3">
-              <div className="rounded-lg border border-gray-700/40 bg-gray-800/60 px-3 py-3">
+            <div className="shrink-0 px-4 py-3 bg-[linear-gradient(180deg,#dcbfa8,#cbb398)] border-t-[3px] border-[var(--cc-brown)]">
+              <div className="rounded-sm border-[3px] border-double border-[var(--cc-brown)] bg-[#fefaf4] px-3 py-3 shadow-[inset_0_2px_8px_rgba(255,255,255,0.8)] font-sans">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-lg">👷</span>
+                    <span className="text-lg leading-none">👷</span>
                     <div>
-                      <span className="block text-sm font-bold text-white">{gameState.minerCount} miners</span>
-                      <span className="text-[10px] text-gray-400">${formatNumber(minerCost)} each</span>
+                      <span className="block text-sm font-black text-black">{gameState.minerCount} miners</span>
+                      <span className="text-[10px] font-bold text-[#5c4332]">${formatNumber(minerCost)} each</span>
                     </div>
                   </div>
                 </div>
                 <div className="flex gap-1.5">
                   {[1, 5, 10, 50].map(amount => (
                     <button
+                      type="button"
                       key={amount}
                       onClick={(e) => { e.stopPropagation(); if (amount === 1) buyMiner(); else buyMiners(amount); }}
                       disabled={gameState.yatesDollars < minerCost}
-                      className={`flex-1 py-1.5 rounded text-[10px] font-bold transition-all ${
+                      className={`flex-1 py-1.5 rounded-sm text-[10px] font-black border-2 border-t-[#fffefb] border-l-[#fffefb] border-r-[#4a3018] border-b-[#4a3018] transition-all ${
                         gameState.yatesDollars >= minerCost
-                          ? 'bg-amber-600 hover:bg-amber-500 text-white active:scale-95'
-                          : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                          ? 'bg-[linear-gradient(180deg,#ffe97a,var(--cc-buy))] text-black hover:brightness-[1.02]'
+                          : 'bg-[#bdb0a2] text-[#5c5448] cursor-not-allowed border-t-[#d4cbc2] border-l-[#d4cbc2]'
                       }`}
                     >
                       +{amount}
@@ -1185,23 +1188,24 @@ export default function MiningGame({ onExit }: MiningGameProps) {
                 <div className="flex gap-1.5 mt-1.5">
                   <input
                     type="number"
-                    min="1"
-                    placeholder="Custom #"
+                    min={1}
+                    placeholder="#"
                     value={customMinerAmount}
                     onChange={(e) => setCustomMinerAmount(e.target.value)}
-                    className="flex-1 bg-gray-900/80 border border-gray-700/50 rounded px-2 py-1 text-[10px] text-white placeholder-gray-500 focus:outline-none focus:border-amber-500/50"
+                    className="flex-1 bg-[#fdfaf6] border-2 border-[#8b7355] rounded-sm px-2 py-1 text-[10px] text-black font-bold placeholder-[#998877] focus:outline-none focus:border-[#5c3317]"
                   />
                   <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      const amt = parseInt(customMinerAmount);
+                      const amt = parseInt(customMinerAmount, 10);
                       if (amt > 0) { buyMiners(amt); setCustomMinerAmount(''); }
                     }}
-                    disabled={!customMinerAmount || parseInt(customMinerAmount) <= 0 || gameState.yatesDollars < minerCost}
-                    className={`px-3 py-1 rounded text-[10px] font-bold transition-all ${
-                      customMinerAmount && parseInt(customMinerAmount) > 0 && gameState.yatesDollars >= minerCost
-                        ? 'bg-amber-600 hover:bg-amber-500 text-white active:scale-95'
-                        : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                    disabled={!customMinerAmount || parseInt(customMinerAmount, 10) <= 0 || gameState.yatesDollars < minerCost}
+                    className={`px-3 py-1 rounded-sm text-[10px] font-black uppercase border-2 border-t-[#fffefb] border-l-[#fffefb] border-r-[#4a3018] border-b-[#4a3018] transition-all ${
+                      customMinerAmount && parseInt(customMinerAmount, 10) > 0 && gameState.yatesDollars >= minerCost
+                        ? 'bg-[linear-gradient(180deg,#ffe97a,var(--cc-buy))] text-black hover:brightness-[1.02]'
+                        : 'bg-[#bdb0a2] text-[#5c5448] cursor-not-allowed'
                     }`}
                   >
                     Buy
@@ -1212,85 +1216,203 @@ export default function MiningGame({ onExit }: MiningGameProps) {
           </div>
         </div>
 
-        {/* ========== BOTTOM ACTION BAR — Arcade Style ========== */}
-        <div className="flex items-center justify-center gap-4 border-t-4 border-gray-800 bg-gray-900/90 backdrop-blur-md px-6 py-3 shadow-[0_-4px_16px_rgba(0,0,0,0.4)]">
-          <div className="flex items-center gap-3">
-            {/* Shop */}
+        {desktopStatsOpen && (
+          <>
             <button
+              type="button"
+              aria-label="Close stats"
+              className="fixed inset-0 bg-black/40 z-[45] lg:block hidden"
+              onClick={() => setDesktopStatsOpen(false)}
+            />
+            <div className="fixed lg:block hidden z-[46] bottom-[5.65rem] right-4 left-4 max-w-xl mx-auto flex max-h-[calc(100dvh-5.75rem)] flex-col rounded-md border-[3px] border-double border-[var(--cc-brown)] bg-[var(--cc-panel)] shadow-[0_8px_36px_rgba(40,25,12,0.45)] overflow-hidden font-serif">
+              <div className="shrink-0 flex items-center justify-between px-4 py-2 border-b-[3px] border-[var(--cc-brown)] bg-[linear-gradient(180deg,#c9a06a,#a67842)]">
+                <span className="text-sm font-black text-black uppercase tracking-[0.15em]" style={{ textShadow: '0 1px 0 rgba(255,245,214,1)' }}>
+                  Stats
+                </span>
+                <button type="button" onClick={() => setDesktopStatsOpen(false)} className="text-[11px] font-black text-black hover:bg-[#fdf4e0] px-2 py-1 rounded-sm border border-[#5c3317] shadow-[inset_0_1px_0_#fff]">
+                  Close ✕
+                </button>
+              </div>
+              <div className="stats-panel-scroll flex w-full max-w-none flex-col gap-4 overflow-y-auto overflow-x-hidden overscroll-y-contain p-4 text-left touch-pan-y bg-[#fffefb] border-t-4 border-[#deb887] font-sans max-h-[calc(100dvh-5.75rem-3.25rem)]">
+                <section className="w-full shrink-0 space-y-2">
+                  <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[#5c4332] border-b-2 border-[#c9a887] pb-1">
+                    Totals &amp; rates
+                  </h3>
+                  <dl className="w-full rounded-sm border-2 border-[#8b6914] bg-[#fffdf6] p-3 space-y-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-[10px] font-black text-[#5c4332] uppercase">Total $ earned</dt>
+                      <dd className="text-[11px] font-black text-black tabular-nums">${formatNumber(gameState.totalMoneyEarned ?? 0)}</dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-[10px] font-black text-[#5c4332] uppercase">This prestige $</dt>
+                      <dd className="text-[11px] font-black text-black tabular-nums">${formatNumber(moneyEarnedThisPrestige)}</dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-[10px] font-black text-[#5c4332] uppercase">Cookie taps</dt>
+                      <dd className="text-[11px] font-black text-black tabular-nums">{formatNumber(gameState.totalClicks ?? 0)}</dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-[10px] font-black text-[#5c4332] uppercase leading-tight">Money per tap <span className="normal-case font-semibold opacity-85">(last hit)</span></dt>
+                      <dd className="text-[11px] font-black text-[#145214] tabular-nums">{lastTapMoney > 0 ? `$${formatNumber(lastTapMoney)}` : '—'}</dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-[10px] font-black text-[#5c4332] uppercase leading-tight">Money per sec <span className="normal-case font-semibold opacity-85">(~miners)</span></dt>
+                      <dd className="text-[11px] font-black text-[#144a72] tabular-nums">${formatNumber(Math.round(estimatedMinerMoneyPerSec))}</dd>
+                    </div>
+                  </dl>
+                </section>
+                <section className="w-full shrink-0 flex flex-col gap-2">
+                  <h3 className="shrink-0 text-[10px] font-black uppercase tracking-[0.2em] text-[#5c4332] border-b-2 border-[#c9a887] pb-1">
+                    Bonuses
+                  </h3>
+                  <p className="shrink-0 text-[10px] text-[#6b5344] font-semibold">Tap a row for sources. Scroll when the list is long or expanded.</p>
+                  <div className="flex w-full flex-col gap-1 rounded-sm border-2 border-[#8b6914] bg-[#fffdf6] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
+                    <div className="space-y-0.5">
+                      {([
+                        { key: 'moneyBonus' as const, icon: '💰', label: 'Money', color: 'text-green-700', val: bonuses.moneyBonus },
+                        { key: 'rockDamageBonus' as const, icon: '💥', label: 'Damage', color: 'text-red-700', val: bonuses.rockDamageBonus },
+                        { key: 'clickSpeedBonus' as const, icon: '⚡', label: 'Click', color: 'text-sky-800', val: bonuses.clickSpeedBonus },
+                        { key: 'couponBonus' as const, icon: '🎟️', label: 'Lottery', color: 'text-amber-900', val: bonuses.couponBonus },
+                        { key: 'luckBonus' as const, icon: '🍀', label: 'Luck', color: 'text-emerald-800', val: bonuses.luckBonus },
+                        { key: 'dropChanceBonus' as const, icon: '🎯', label: 'Drops', color: 'text-indigo-800', val: bonuses.dropChanceBonus },
+                        { key: 'minerDamageBonus' as const, icon: '⛏️', label: 'Miner Dmg', color: 'text-orange-900', val: bonuses.minerDamageBonus },
+                        { key: 'minerSpeedBonus' as const, icon: '🏃', label: 'Miner Spd', color: 'text-teal-800', val: bonuses.minerSpeedBonus },
+                      ]).map(s => (
+                        <div key={s.key} data-bonus-row={s.key}>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedBonusStat(expandedBonusStat === s.key ? null : s.key)}
+                            className={`w-full text-left text-[11px] font-bold ${s.color} flex items-center justify-between py-1.5 px-2 rounded-sm border border-transparent hover:border-[#b8956a] hover:bg-[#fff9ef] ${s.val <= 0 ? 'opacity-70' : ''}`}
+                          >
+                            <span>
+                              {s.icon}{' '}
+                              {s.val > 0 ? '+' : ''}
+                              {s.key === 'luckBonus' || s.key === 'dropChanceBonus' ? s.val.toFixed(1) : `${(s.val * 100).toFixed(0)}%`}{' '}
+                              {s.label}
+                              {s.val <= 0 && <span className="text-[9px] font-semibold text-[#998877] ml-1">(none)</span>}
+                            </span>
+                            <span className="text-[10px] text-[#8b7355] font-black">{expandedBonusStat === s.key ? '▼' : '▶'}</span>
+                          </button>
+                          {expandedBonusStat === s.key && (
+                            <div className="ml-2 mt-1 mb-2 p-2 rounded-sm bg-[#f5edd8] border-2 border-[#c9a887] space-y-1">
+                              {getBonusBreakdown(s.key).map((entry, i) => (
+                                <div key={i} className="flex justify-between text-[10px] gap-2 font-semibold">
+                                  <span className="text-[#3d2920] shrink">{entry.source}</span>
+                                  <span className={entry.value >= 0 ? 'text-[#0d6620]' : 'text-[#8b1515]'}>
+                                    {entry.value >= 0 ? '+' : ''}
+                                    {s.key === 'luckBonus' || s.key === 'dropChanceBonus' ? entry.value.toFixed(1) : `${(entry.value * 100).toFixed(0)}%`}
+                                  </span>
+                                </div>
+                              ))}
+                              {getBonusBreakdown(s.key).length === 0 && (
+                                <div className="text-[10px] text-[#7a6655] font-semibold">No sources — stat is 0 or only from stacking elsewhere.</div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </>
+        )}
+
+
+        {/* ========== BOTTOM MENU — Cookie Clicker “button panel” ========== */}
+        <div className="shrink-0 flex items-center justify-center gap-3 border-t-[6px] border-[#2a1810] bg-[linear-gradient(180deg,#3d2920_0%,#2a1810_100%)] px-4 py-2.5 overflow-x-auto panel-no-scroll shadow-[inset_0_3px_0_rgba(255,230,176,0.08)] font-sans">
+          <div className="flex items-center gap-2 min-h-[4.85rem]">
+            <button
+              type="button"
+              onClick={() => setDesktopStatsOpen((v) => !v)}
+              className={`flex h-14 w-[6.95rem] flex-col items-center justify-center gap-0.5 rounded-sm border-2 border-t-[#f5ebe0] border-l-[#f5ebe0] border-r-[#1f1410] border-b-[#1f1410] font-black shadow-[inset_0_-2px_4px_rgba(0,0,0,0.15)] transition-all shrink-0 active:border-t-transparent active:border-l-transparent active:translate-x-px active:translate-y-px ${
+                desktopStatsOpen ? 'bg-[#c5e8ff] text-[#0d3d5c]' : 'bg-[#e9dcc8] text-[#1a2818] hover:brightness-[1.02]'
+              }`}
+              title="Stats"
+            >
+              <span className="text-lg leading-none">📈</span>
+              <span className="text-[10px] uppercase tracking-wide">Stats</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setShowShop(true)}
-              className="flex h-14 w-28 flex-col items-center justify-center gap-0.5 rounded-lg border-r-4 border-b-4 border-amber-800 bg-amber-600 hover:bg-amber-500 active:border-r-0 active:border-b-0 active:translate-x-1 active:translate-y-1 transition-all"
+              className="flex h-14 w-[6.95rem] flex-col items-center justify-center gap-0.5 rounded-sm border-2 border-t-[#fffaf0] border-l-[#fffaf0] border-r-[#3d2918] border-b-[#3d2918] bg-[linear-gradient(180deg,#ffe893,var(--cc-buy))] text-black font-black shadow-[inset_0_-2px_5px_rgba(80,42,12,0.15)] hover:brightness-[1.03] active:border-t-transparent active:border-l-transparent active:translate-x-px active:translate-y-px shrink-0"
             >
-              <span className="text-lg">🛒</span>
-              <span className="text-[10px] font-bold text-white uppercase tracking-wider">Shop</span>
+              <span className="text-lg leading-none">🛒</span>
+              <span className="text-[10px] uppercase tracking-wide">Shop</span>
             </button>
 
-            {/* Achievements */}
             <button
+              type="button"
               onClick={() => setForceOpenAchievements(true)}
-              className="flex h-14 w-28 flex-col items-center justify-center gap-0.5 rounded-lg border-r-4 border-b-4 border-gray-700 bg-gray-600 hover:bg-gray-500 active:border-r-0 active:border-b-0 active:translate-x-1 active:translate-y-1 transition-all"
+              className="flex h-14 w-[6.95rem] flex-col items-center justify-center gap-0.5 rounded-sm border-2 border-t-[#f5ebe0] border-l-[#f5ebe0] border-r-[#1f1410] border-b-[#1f1410] bg-[#e4d8c9] hover:bg-[#ebe2d8] text-[#1c1814] font-black shadow-[inset_0_-2px_4px_rgba(0,0,0,0.12)] active:border-t-transparent active:border-l-transparent active:translate-x-px active:translate-y-px shrink-0"
             >
-              <span className="text-lg">🏆</span>
-              <span className="text-[10px] font-bold text-white uppercase tracking-wider">Achievments</span>
+              <span className="text-lg leading-none">🏆</span>
+              <span className="text-[10px] uppercase tracking-wide">Achiev.</span>
             </button>
 
-            {/* Trinket Collection — unlocks at 2 prestiges + 100K */}
             {(gameState.prestigeCount >= 2 || gameState.ownedTrinketIds.length > 0) && (
               <button
+                type="button"
                 onClick={() => setShowTrinketIndex(true)}
-                className="flex h-14 w-28 flex-col items-center justify-center gap-0.5 rounded-lg border-r-4 border-b-4 border-purple-800 bg-purple-700 hover:bg-purple-600 active:border-r-0 active:border-b-0 active:translate-x-1 active:translate-y-1 transition-all"
+                className="flex h-14 w-[6.95rem] flex-col items-center justify-center gap-0.5 rounded-sm border-2 border-t-[#f7ecff] border-l-[#f7ecff] border-r-[#2a1438] border-b-[#2a1438] bg-[#e4cfe8] hover:bg-[#ecdaf2] text-[#2a1438] font-black shadow-[inset_0_-2px_4px_rgba(0,0,0,0.12)] active:border-t-transparent active:border-l-transparent active:translate-x-px active:translate-y-px shrink-0"
               >
-                <span className="text-lg">💎</span>
-                <span className="text-[10px] font-bold text-white uppercase tracking-wider">Trinkets</span>
+                <span className="text-lg leading-none">💎</span>
+                <span className="text-[10px] uppercase tracking-wide">Trink.</span>
               </button>
             )}
 
-            {/* Ranking */}
             <button
+              type="button"
               onClick={() => setShowRanking(true)}
-              className="flex h-14 w-28 flex-col items-center justify-center gap-0.5 rounded-lg border-r-4 border-b-4 border-gray-700 bg-gray-600 hover:bg-gray-500 active:border-r-0 active:border-b-0 active:translate-x-1 active:translate-y-1 transition-all"
+              className="flex h-14 w-[6.95rem] flex-col items-center justify-center gap-0.5 rounded-sm border-2 border-t-[#f5ebe0] border-l-[#f5ebe0] border-r-[#1f1410] border-b-[#1f1410] bg-[#ddd2c6] hover:bg-[#e5dcd2] text-[#1e1814] font-black shadow-[inset_0_-2px_4px_rgba(0,0,0,0.12)] active:border-t-transparent active:border-l-transparent active:translate-x-px active:translate-y-px shrink-0"
             >
-              <span className="text-lg">📊</span>
-              <span className="text-[10px] font-bold text-white uppercase tracking-wider">Ranking</span>
+              <span className="text-lg leading-none">📊</span>
+              <span className="text-[10px] uppercase tracking-wide">Rank</span>
             </button>
 
-            {/* Prestige */}
             <button
+              type="button"
               onClick={() => setShowRockSelector(true)}
-              className="flex h-14 w-28 flex-col items-center justify-center gap-0.5 rounded-lg border-r-4 border-b-4 border-purple-800 bg-purple-600 hover:bg-purple-500 active:border-r-0 active:border-b-0 active:translate-x-1 active:translate-y-1 transition-all"
+              className="flex h-14 w-[6.95rem] flex-col items-center justify-center gap-0.5 rounded-sm border-2 border-t-[#fbe8ff] border-l-[#fbe8ff] border-r-[#3a1436] border-b-[#3a1436] bg-[linear-gradient(180deg,#f0d8f5,#dcb8dc)] hover:brightness-[1.03] text-[#341030] font-black shadow-[inset_0_-2px_5px_rgba(40,10,44,0.12)] active:border-t-transparent active:border-l-transparent active:translate-x-px active:translate-y-px shrink-0"
             >
-              <span className="text-lg">🔄</span>
-              <span className="text-[10px] font-bold text-white uppercase tracking-wider">Rocks</span>
+              <span className="text-lg leading-none">🔄</span>
+              <span className="text-[10px] uppercase tracking-wide">Rocks</span>
             </button>
 
-            {/* Settings */}
-            <button
-              onClick={() => setShowSettings(true)}
-              className="flex h-14 w-28 flex-col items-center justify-center gap-0.5 rounded-lg border-r-4 border-b-4 border-gray-700 bg-gray-600 hover:bg-gray-500 active:border-r-0 active:border-b-0 active:translate-x-1 active:translate-y-1 transition-all"
-            >
-              <span className="text-lg">⚙️</span>
-              <span className="text-[10px] font-bold text-white uppercase tracking-wider">Settings</span>
-            </button>
-
-            {/* Shady Sam (Darkness path only, unlocks at prestige 5 + 500K) */}
+            {getBuildingCount('temple') > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowTempleFromPanel(true)}
+                className="flex h-14 w-[6.95rem] flex-col items-center justify-center gap-0.5 rounded-sm border-2 border-t-[#ffe8ea] border-l-[#ffe8ea] border-r-[#3d1818] border-b-[#3d1818] bg-[linear-gradient(180deg,#fad4d9,#eab0b9)] hover:brightness-[1.02] text-[#381018] font-black shadow-[inset_0_-2px_5px_rgba(50,14,22,0.12)] active:border-t-transparent active:border-l-transparent active:translate-x-px active:translate-y-px shrink-0"
+                title="Temple"
+              >
+                <span className="text-lg leading-none">🏛️</span>
+                <span className="text-[10px] uppercase tracking-wide">Temple</span>
+              </button>
+            )}
             {gameState.chosenPath === 'darkness' && gameState.prestigeCount >= 5 && (
               <button
+                type="button"
                 onClick={() => setShowShadySam(true)}
-                className="flex h-14 w-28 flex-col items-center justify-center gap-0.5 rounded-lg border-r-4 border-b-4 border-purple-900 bg-gray-800 hover:bg-purple-900 active:border-r-0 active:border-b-0 active:translate-x-1 active:translate-y-1 transition-all"
+                className="flex h-14 w-[6.95rem] flex-col items-center justify-center gap-0.5 rounded-sm border-2 border-t-[#e8e0f5] border-l-[#e8e0f5] border-r-[#241030] border-b-[#241030] bg-[#b8aac8] hover:bg-[#c4b9d6] shadow-[inset_0_-2px_5px_rgba(0,0,0,0.2)] active:border-t-transparent active:border-l-transparent active:translate-x-px active:translate-y-px shrink-0 font-black text-[#1a0824]"
               >
                 <Image src="/game/buildings/shadysam.png" alt="Sam" width={28} height={28} style={{ imageRendering: 'pixelated' }} unoptimized />
-                <span className="text-[10px] font-bold text-purple-300 uppercase tracking-wider">Sam</span>
+                <span className="text-[10px] uppercase tracking-wide leading-none">Sam</span>
               </button>
             )}
           </div>
 
-          {/* New Pickaxe notification */}
           {canBuyNextPickaxe && !showShop && (
             <button
+              type="button"
               onClick={() => setShowShop(true)}
-              className="flex h-14 px-4 flex-col items-center justify-center gap-0.5 rounded-lg border-r-4 border-b-4 border-green-800 bg-green-600 hover:bg-green-500 active:border-r-0 active:border-b-0 active:translate-x-1 active:translate-y-1 transition-all animate-pulse"
+              className="flex h-14 shrink-0 px-5 flex-col items-center justify-center gap-0.5 rounded-sm border-2 border-t-[#d8ffd8] border-l-[#d8ffd8] border-r-[#103018] border-b-[#103018] bg-[linear-gradient(180deg,#8fd96a,#4aaf48)] animate-pulse ml-2 font-black text-black shadow-[inset_0_-2px_5px_rgba(0,0,0,0.15)] active:border-t-transparent active:border-l-transparent active:translate-x-px active:translate-y-px"
             >
-              <span className="text-lg">⛏️</span>
-              <span className="text-[10px] font-bold text-white uppercase tracking-wider">New Pick!</span>
+              <span className="text-lg leading-none">⛏️</span>
+              <span className="text-[10px] uppercase tracking-wide leading-tight">New!</span>
             </button>
           )}
         </div>
@@ -1382,10 +1504,14 @@ export default function MiningGame({ onExit }: MiningGameProps) {
       <SacrificeModal isOpen={showSacrifice} onClose={() => setShowSacrifice(false)} />
       <GameSettings isOpen={showSettings} onClose={() => setShowSettings(false)} />
       <ForemanJackTutorial />
-      {/* Floating trinket shop button — mobile only (desktop uses inline version in right panel) */}
-      <div className="lg:hidden">
-        <TrinketShopButton hidden={showTrinketIndex} onOpen={() => setTrinketShopOpen(true)} />
-      </div>
+      {!showTrinketIndex && (
+        <div className="lg:hidden fixed bottom-[180px] sm:bottom-[200px] left-2 sm:left-4 z-30 flex flex-col gap-2 w-[min(13.5rem,calc(100vw-1rem))] items-stretch">
+          <div className="w-full flex justify-center font-sans pointer-events-auto">
+            <TrinketSlot />
+          </div>
+          <TrinketShopButton inline onOpen={() => setTrinketShopOpen(true)} />
+        </div>
+      )}
       <TrinketShopModal isOpen={trinketShopOpen} onClose={() => setTrinketShopOpen(false)} />
       <TrinketIndex isOpen={showTrinketIndex} onClose={() => setShowTrinketIndex(false)} />
       <GameTerminal isOpen={showTerminal} onClose={() => setShowTerminal(false)} onMine={handleMine} />
@@ -1400,6 +1526,26 @@ export default function MiningGame({ onExit }: MiningGameProps) {
 
       {/* CSS Animations */}
       <style jsx global>{`
+        .stats-panel-scroll {
+          -webkit-overflow-scrolling: touch;
+          scrollbar-width: thin;
+          scrollbar-color: #b8956a #efe4d4;
+        }
+        .stats-panel-scroll::-webkit-scrollbar {
+          width: 10px;
+        }
+        .stats-panel-scroll::-webkit-scrollbar-track {
+          background: #efe4d4;
+          border-radius: 6px;
+        }
+        .stats-panel-scroll::-webkit-scrollbar-thumb {
+          background: #b8956a;
+          border-radius: 6px;
+          border: 2px solid #efe4d4;
+        }
+        .stats-panel-scroll::-webkit-scrollbar-thumb:hover {
+          background: #9c7248;
+        }
         .panel-no-scroll::-webkit-scrollbar { display: none; }
         .panel-no-scroll { -ms-overflow-style: none; scrollbar-width: none; }
 

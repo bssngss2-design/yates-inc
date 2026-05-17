@@ -1,13 +1,31 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '@/contexts/GameContext';
 import { useBudget } from '@/contexts/BudgetContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useClient } from '@/contexts/ClientContext';
-import { getPrestigeRockRequirement, getPrestigePickaxeRequirement } from '@/types/game';
+import {
+  getPrestigeRockRequirement,
+  getPrestigePickaxeRequirement,
+  getPrestigeMoneyRequirement,
+  getPrestigePriceMultiplier,
+} from '@/types/game';
 import { ROCKS, PICKAXES } from '@/lib/gameData';
+
+function formatPrestigeRunDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return '0s';
+  const totalSec = Math.floor(ms / 1000);
+  const d = Math.floor(totalSec / 86400);
+  const h = Math.floor((totalSec % 86400) / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
 
 export default function PrestigeButton() {
   const { gameState, canPrestige, prestige } = useGame();
@@ -21,10 +39,16 @@ export default function PrestigeButton() {
   const [isPrestiging, setIsPrestiging] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [showRequirements, setShowRequirements] = useState(false);
+  const [, setNowTick] = useState(0);
 
   // For portal - need to wait for client-side mount
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNowTick((n) => n + 1), 1000);
+    return () => window.clearInterval(id);
   }, []);
 
   const isReady = canPrestige();
@@ -62,6 +86,55 @@ export default function PrestigeButton() {
 
   const nextMultiplier = 1.0 + ((gameState.prestigeCount + 1) * 0.1);
   const contributionAmount = Math.floor(gameState.yatesDollars / 32);
+
+  const nextPrestigeNum = gameState.prestigeCount + 1;
+
+  const runDurationMs = Date.now() - (gameState.gameStartTime || Date.now());
+
+  const hcPreviewLine = useMemo(() => {
+    if (nextPrestigeNum < 10) return 'Heavenly chips: unlock at prestige 10 (+1 HC, Ascension tree).';
+    if (nextPrestigeNum === 10) {
+      return 'Heavenly chips: +1 (Ascension tree opens).';
+    }
+    const fromGems = Math.floor((gameState.gems || 0) / 25);
+    const fromMoney = Math.floor(gameState.yatesDollars / 1_000_000_000_000);
+    return `Heavenly chips: +${fromGems + fromMoney} (${fromGems} from gems · ${fromMoney} from $).`;
+  }, [nextPrestigeNum, gameState.gems, gameState.yatesDollars]);
+
+  /** Bottleneck progress toward next prestige: rock id, required pick (price/money), soft money gate. */
+  const prestigeProgressPct = useMemo(() => {
+    const rockReq = rockRequired;
+    const rockPct =
+      gameState.currentRockId >= rockReq ? 1 : Math.min(1, gameState.currentRockId / Math.max(1, rockReq));
+
+    let pickPct = 1;
+    if (pickaxeRequired !== -1 && !gameState.ownedPickaxeIds.includes(pickaxeRequired)) {
+      const def = PICKAXES.find((p) => p.id === pickaxeRequired);
+      if (!def) pickPct = 0;
+      else {
+        const scaled = Math.floor(
+          def.price * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0),
+        );
+        pickPct = scaled <= 0 ? 1 : Math.min(1, gameState.yatesDollars / scaled);
+      }
+    }
+
+    const moneyReq = getPrestigeMoneyRequirement(gameState.prestigeCount);
+    const moneyPct = moneyReq <= 0 ? 1 : Math.min(1, gameState.yatesDollars / moneyReq);
+
+    return Math.round(Math.min(rockPct, pickPct, moneyPct) * 1000) / 10;
+  }, [
+    rockRequired,
+    pickaxeRequired,
+    gameState.currentRockId,
+    gameState.ownedPickaxeIds,
+    gameState.yatesDollars,
+    gameState.prestigeCount,
+    gameState.isHardMode,
+    gameState.sideLevel,
+  ]);
+
+  const conciseTitle = `×${gameState.prestigeMultiplier.toFixed(2)} · ${formatPrestigeRunDuration(runDurationMs)} · ${hcPreviewLine.replace(/^Heavenly chips: /, '')}`;
 
   const handlePrestige = async () => {
     setIsPrestiging(true);
@@ -244,31 +317,63 @@ export default function PrestigeButton() {
 
   return (
     <>
-      {isReady ? (
-        <button
-          onClick={() => setShowConfirm(true)}
-          className="relative bg-gradient-to-r from-purple-600 via-pink-500 to-red-500 text-white px-4 py-2 rounded-lg font-bold shadow-lg hover:shadow-xl transform hover:scale-105 transition-all animate-pulse"
+      <div className="relative z-[140] inline-flex flex-col items-stretch isolate w-full max-w-[13.5rem] group">
+        <div
+          className="pointer-events-none absolute z-[160] top-full left-1/2 mt-1.5 w-[min(17.5rem,calc(100vw-2rem))] -translate-x-1/2 rounded-md border-2 border-purple-500/80 bg-gray-950/95 px-3 py-2 text-left text-[10px] leading-snug text-gray-100 shadow-xl opacity-0 translate-y-0.5 transition-all duration-150 invisible group-hover:opacity-100 group-hover:visible group-hover:translate-y-0"
+          role="tooltip"
         >
-          <span className="flex items-center gap-2">
-            🌟 PRESTIGE {gameState.prestigeCount + 1}
-          </span>
-          <span className="block text-xs opacity-80">
-            Get {nextMultiplier.toFixed(1)}x multiplier
-          </span>
-        </button>
-      ) : (
-        <button
-          onClick={() => setShowRequirements(true)}
-          className="relative bg-gray-700 text-gray-300 px-4 py-2 rounded-lg font-bold shadow-lg hover:bg-gray-600 transition-all"
+          <p className="font-black text-amber-200/95">
+            Multiplier (now){' '}
+            <span className="tabular-nums text-white">×{gameState.prestigeMultiplier.toFixed(2)}</span>
+          </p>
+          <p className="mt-1 text-gray-300">
+            <span className="font-bold text-gray-400">This prestige: </span>
+            {formatPrestigeRunDuration(runDurationMs)}
+          </p>
+          <p className="mt-1 text-amber-100/95">{hcPreviewLine}</p>
+        </div>
+
+        {isReady ? (
+          <button
+            type="button"
+            title={conciseTitle}
+            onClick={() => setShowConfirm(true)}
+            className="relative w-full bg-gradient-to-r from-purple-600 via-pink-500 to-red-500 text-white px-3 py-2 rounded-t-md font-bold shadow-lg hover:shadow-xl hover:brightness-[1.03] transition-all border-2 border-b-0 border-purple-700/90"
+          >
+            <span className="flex items-center justify-center gap-1.5 text-sm">
+              🌟 <span className="tracking-tight">Prestige</span>
+            </span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            title={conciseTitle}
+            onClick={() => setShowRequirements(true)}
+            className="relative w-full bg-gray-700 text-gray-200 px-3 py-2 rounded-t-md font-bold shadow-lg hover:bg-gray-600 transition-all border-2 border-b-0 border-gray-600"
+          >
+            <span className="flex items-center justify-center gap-1.5 text-sm">
+              🔒 <span className="tracking-tight">Prestige</span>
+            </span>
+          </button>
+        )}
+
+        <div
+          className={`h-1.5 w-full overflow-hidden rounded-b-md border-2 border-t-0 shadow-inner ${
+            isReady ? 'border-purple-700/90 bg-purple-950/60' : 'border-gray-600 bg-gray-900'
+          }`}
+          aria-hidden
         >
-          <span className="flex items-center gap-2">
-            🔒 PRESTIGE {gameState.prestigeCount + 1}
-          </span>
-          <span className="block text-xs opacity-80">
-            Click to see requirements
-          </span>
-        </button>
-      )}
+          <div
+            className={`h-full transition-[width] duration-300 ease-out ${
+              isReady
+                ? 'bg-gradient-to-r from-amber-300 via-yellow-300 to-amber-200'
+                : 'bg-gradient-to-r from-slate-500 to-slate-400'
+            }`}
+            style={{ width: `${Math.min(100, Math.max(0, prestigeProgressPct))}%` }}
+          />
+        </div>
+      </div>
+
 
       {/* Modal rendered via portal to document.body */}
       {modalContent}

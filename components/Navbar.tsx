@@ -12,7 +12,6 @@ import CartSidebar from './CartSidebar';
 import InboxSidebar from './InboxSidebar';
 // Stock Market removed - feature deprecated
 import BudgetSidebar from './BudgetSidebar';
-import GitCommitsModal from './GitCommitsModal';
 import VoteForChangeModal from './VoteForChangeModal';
 import EmployeeShopModal from './EmployeeShopModal';
 import DeleteAccountModal from './DeleteAccountModal';
@@ -51,7 +50,6 @@ export default function Navbar() {
   // showPaychecks moved into /admin page (CEO-only consolidation).
   // Stock market removed
   const [showBudget, setShowBudget] = useState(false);
-  const [showGitCommits, setShowGitCommits] = useState(false);
   const [showVoteModal, setShowVoteModal] = useState(false);
   const [showShopModal, setShowShopModal] = useState(false);
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
@@ -71,13 +69,13 @@ export default function Navbar() {
                 <Link href="/" className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">
                   YATES
                 </Link>
-                <button
-                  onClick={() => setShowGitCommits(true)}
+                <Link
+                  href="/update"
                   className="text-xl sm:text-2xl font-bold text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
-                  title="View Dev Status & Commits"
+                  title="Update Log & Dev Status"
                 >
                   CO.
-                </button>
+                </Link>
               </div>
               {!isLoggedIn && !isClient && (
                 <Link
@@ -530,7 +528,6 @@ export default function Navbar() {
       <CartSidebar isOpen={showCart} onClose={() => setShowCart(false)} />
       <InboxSidebar isOpen={showInbox} onClose={() => setShowInbox(false)} />
       {isLoggedIn && <BudgetSidebar isOpen={showBudget} onClose={() => setShowBudget(false)} />}
-      <GitCommitsModal isOpen={showGitCommits} onClose={() => setShowGitCommits(false)} />
       <VoteForChangeModal isOpen={showVoteModal} onClose={() => setShowVoteModal(false)} />
       <EmployeeShopModal isOpen={showShopModal} onClose={() => setShowShopModal(false)} />
       <DeleteAccountModal isOpen={showDeleteAccount} onClose={() => setShowDeleteAccount(false)} />

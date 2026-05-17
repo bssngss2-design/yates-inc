@@ -250,29 +250,15 @@ export default function BankModal({ onClose }: BankModalProps) {
             </div>
           ) : (
             <div className="space-y-4">
-              {(() => {
-                const withdrawCap = Math.max(gameState.yatesDollars, (gameState.totalMoneyEarned || 0) / 2);
-                const withdrawAmount = Math.min(currentBalance, withdrawCap);
-                const isCapped = withdrawAmount < currentBalance;
-                return (
-                  <>
-                    <button
-                      onClick={() => withdrawFromBank()}
-                      className="w-full py-3 rounded-lg font-bold bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 hover:to-amber-500 text-white transition-all"
-                    >
-                      Withdraw ${formatNumber(withdrawAmount)}
-                    </button>
-                    {isCapped && (
-                      <p className="text-orange-400 text-xs text-center">
-                        Capped — max withdrawal is your balance (${formatNumber(gameState.yatesDollars)}) or half your leaderboard score (${formatNumber((gameState.totalMoneyEarned || 0) / 2)}), whichever is higher.
-                      </p>
-                    )}
-                    <p className="text-gray-400 text-xs text-center">
-                      Leave your money longer for more interest!
-                    </p>
-                  </>
-                );
-              })()}
+              <button
+                onClick={() => withdrawFromBank()}
+                className="w-full py-3 rounded-lg font-bold bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 hover:to-amber-500 text-white transition-all"
+              >
+                Withdraw ${formatNumber(currentBalance)}
+              </button>
+              <p className="text-gray-400 text-xs text-center">
+                Leave your money longer for more interest!
+              </p>
             </div>
           )}
 

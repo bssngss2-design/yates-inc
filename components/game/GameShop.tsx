@@ -710,7 +710,7 @@ export default function GameShop({ onClose }: GameShopProps) {
             <div className="space-y-1.5">
               {BUILDINGS.filter(building => {
                 if (building.pathRestriction === null) return true;
-                if (!gameState.chosenPath) return false;
+                if (!gameState.chosenPath) return true;
                 return building.pathRestriction === gameState.chosenPath;
               }).map(building => {
                 const countMap: Record<string, number> = {

@@ -540,7 +540,14 @@ export default function MiningGame({ onExit }: MiningGameProps) {
   // Building data for right panel — sorted by price, filtered by path and progressive unlocking
   const availableBuildings = useMemo(() => {
     return BUILDINGS.filter(building => {
-      if (building.pathRestriction !== null && building.pathRestriction !== gameState.chosenPath) return false;
+      // Path locks purchases (canBuyBuilding), not discovery — show all path buildings until a side is chosen.
+      if (
+        gameState.chosenPath !== null &&
+        building.pathRestriction !== null &&
+        building.pathRestriction !== gameState.chosenPath
+      ) {
+        return false;
+      }
       // Progressive unlocking: buildings only appear when player hits "see at" threshold
       const totalEarned = gameState.totalMoneyEarned || 0;
       const unlockThresholds: Record<string, number> = {

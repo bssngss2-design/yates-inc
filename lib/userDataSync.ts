@@ -87,6 +87,8 @@ export interface UserGameData {
   owned_ascension_node_ids?: string[];
   // Timestamp (set by Supabase)
   updated_at?: string;
+  /** Client-only: selects hard-mode Supabase table; never written as a column */
+  _isHardMode?: boolean;
 }
 
 export interface UserPurchase {
@@ -217,7 +219,9 @@ function stripUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
 // Save/update user game data to Supabase
 export async function saveUserGameData(data: Partial<UserGameData> & { user_id: string; user_type: 'employee' | 'client' }, versionAtCallTime?: number, isHardMode: boolean = false): Promise<boolean> {
   try {
-    const tableName = getTableName(isHardMode);
+    // Debounced saves pass `_isHardMode`; force saves historically omitted hard mode and wrote to the wrong table.
+    const resolvedHard = isHardMode || Boolean(data._isHardMode);
+    const tableName = getTableName(resolvedHard);
     const fullData = stripUndefined({
       user_id: data.user_id,
       user_type: data.user_type,
@@ -285,7 +289,7 @@ export async function saveUserGameData(data: Partial<UserGameData> & { user_id: 
       return true; // Return true so it doesn't retry
     }
 
-    console.log(`📤 SUPABASE SAVE (${isHardMode ? 'HARD' : 'normal'}):`, { prestige: data.prestige_count, clicks: data.total_clicks, dollars: data.yates_dollars });
+    console.log(`📤 SUPABASE SAVE (${resolvedHard ? 'HARD' : 'normal'}):`, { prestige: data.prestige_count, clicks: data.total_clicks, dollars: data.yates_dollars });
     
     const { error } = await supabase
       .from(tableName)
@@ -467,10 +471,14 @@ async function executeSave(): Promise<void> {
     }
     // Extract isHardMode flag and pass version so saveUserGameData can double-check before actual DB write
     const isHardMode = dataToSave._isHardMode || false;
-    await saveUserGameData(dataToSave, versionAtStart, isHardMode);
+    const saved = await saveUserGameData(dataToSave, versionAtStart, isHardMode);
+    if (!saved) {
+      // saveUserGameData returns false on failure without throwing — restore snapshot so we retry
+      pendingData = { ...(dataToSave || {}), ...(pendingData || {}) } as NonNullable<typeof pendingData>;
+    }
   } catch {
     // Put the data back if save failed
-    pendingData = { ...(dataToSave || {}), ...(pendingData || {}) } as UserGameData;
+    pendingData = { ...(dataToSave || {}), ...(pendingData || {}) } as NonNullable<typeof pendingData>;
   } finally {
     isSaving = false;
   }

@@ -17,7 +17,11 @@ export default function BuildingDisplay() {
   // Get all owned buildings with their counts
   // Filter out buildings that don't match the player's path
   const ownedBuildings = BUILDINGS.filter(building => {
-    if (building.pathRestriction !== null && building.pathRestriction !== gameState.chosenPath) {
+    if (
+      gameState.chosenPath !== null &&
+      building.pathRestriction !== null &&
+      building.pathRestriction !== gameState.chosenPath
+    ) {
       return false;
     }
     const count = getBuildingCount(building.id);

@@ -1089,12 +1089,13 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
           user_type: userType,
           owned_pickaxe_ids: newOwnedPickaxes,
           current_pickaxe_id: YATES_PICKAXE_ID,
+          _isHardMode: gameState.isHardMode,
         });
       }
       // Clear the flag so it doesn't re-grant
       localStorage.removeItem('yates-secret-completed');
     }
-  }, [gameState.ownedPickaxeIds, userId, userType]);
+  }, [gameState.ownedPickaxeIds, gameState.isHardMode, userId, userType]);
 
   // Auto-restock check every second (product shop)
   useEffect(() => {
@@ -2377,6 +2378,8 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     stokens: state.stokens,
     lottery_tickets: state.lotteryTickets,
     shady_sam_swaps: JSON.stringify(state.shadySamSwaps),
+    /** Routes saves to user_game_hard_data when true */
+    _isHardMode: state.isHardMode,
     wandering_trader_perm_buffs: JSON.stringify(state.wanderingTraderPermBuffs),
     powerup_cooldowns: JSON.stringify(state.powerupCooldowns),
     gems: state.gems || 0,
@@ -3358,6 +3361,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       forceImmediateSave({
         user_id: userId,
         user_type: userType,
+        _isHardMode: gameState.isHardMode,
         yates_dollars: keepsMoney ? currentMoney : 0,
         total_clicks: 0,
         current_pickaxe_id: 1,
@@ -3394,7 +3398,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     }
 
     return { amountToCompany, newMultiplier, newPrestigeCount, hcEarnedThisPrestige };
-  }, [canPrestige, gameState.yatesDollars, gameState.gems, gameState.prestigeCount, gameState.prestigeMultiplier, gameState.ownedTrinketIds, gameState.equippedTrinketIds, gameState.prestigeTokens, gameState.stokens, gameState.lotteryTickets, gameState.gameStartTime, gameState.fastestPrestigeTime, gameState.totalMoneyEarned, gameState.hasStocksUnlocked, userId, userType]);
+  }, [canPrestige, gameState.yatesDollars, gameState.gems, gameState.prestigeCount, gameState.prestigeMultiplier, gameState.ownedTrinketIds, gameState.equippedTrinketIds, gameState.prestigeTokens, gameState.stokens, gameState.lotteryTickets, gameState.gameStartTime, gameState.fastestPrestigeTime, gameState.totalMoneyEarned, gameState.hasStocksUnlocked, gameState.isHardMode, userId, userType]);
 
   // =====================
   // ASCENSION TREE FUNCTIONS
@@ -4372,6 +4376,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         user_id: userId,
         user_type: userType,
         chosen_path: path,
+        _isHardMode: gameStateRef.current.isHardMode,
       });
     }
     
@@ -4755,7 +4760,12 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         const newOwnedTrinkets = [...gameState.ownedTrinketIds, 'yates_totem'];
         setGameState(prev => ({ ...prev, ownedTrinketIds: newOwnedTrinkets }));
         if (userId && userType) {
-          forceImmediateSave({ user_id: userId, user_type: userType, owned_trinket_ids: newOwnedTrinkets });
+          forceImmediateSave({
+            user_id: userId,
+            user_type: userType,
+            owned_trinket_ids: newOwnedTrinkets,
+            _isHardMode: gameStateRef.current.isHardMode,
+          });
         }
         return { type: 'yates_totem', value: 'yates_totem' };
       }

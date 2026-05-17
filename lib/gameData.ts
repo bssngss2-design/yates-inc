@@ -599,11 +599,11 @@ export const getAllBuildings = (): Building[] => {
   return BUILDINGS;
 };
 
-// Get buildings available for a specific path (null path = path not chosen yet)
+// Get buildings for UI lists: null path = show all (purchase still path-gated via canBuyBuilding)
 export const getBuildingsForPath = (path: 'light' | 'darkness' | null): Building[] => {
   return BUILDINGS.filter((b) => {
     if (b.pathRestriction === null) return true;
-    if (path === null) return false; // Can't buy path-restricted buildings without a path
+    if (path === null) return true;
     return b.pathRestriction === path;
   });
 };

@@ -22,8 +22,9 @@ export default function MaintenanceMode({ children }: { children: React.ReactNod
         </h1>
         
         {/* Sub message */}
-        <p className="text-2xl md:text-3xl text-gray-300 mb-8">
-          We&apos;re making some important updates to improve your experience.
+        <p className="text-2xl md:text-3xl text-gray-300 mb-8 leading-relaxed">
+          Our servers got annihilated. Our team of bernardos is trying their best
+          to fix it today.
         </p>
         
         {/* Additional info */}

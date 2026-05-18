@@ -1,5 +1,7 @@
 -- Company Budget System Tables
 -- Run this in your Supabase SQL Editor
+--
+-- PREREQUISITE: Run sql/00_EMPLOYEES_AND_TASKS.sql first (creates `employees`).
 
 -- Main budget table (single row for company totals)
 CREATE TABLE IF NOT EXISTS company_budget (

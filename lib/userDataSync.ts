@@ -271,11 +271,26 @@ export async function saveUserGameData(data: Partial<UserGameData> & { user_id: 
       total_golden_cookies_collected: data.total_golden_cookies_collected,
       total_miners_sacrificed: data.total_miners_sacrificed,
       last_tax_time: safeBigInt(data.last_tax_time),
+      loan_amount:
+        data.loan_amount !== undefined && typeof data.loan_amount === 'number' && Number.isFinite(data.loan_amount)
+          ? Math.min(Math.max(0, data.loan_amount), NUMBER_CAP)
+          : undefined,
+      loan_taken_at: safeBigInt(data.loan_taken_at),
+      loan_last_accrual_at: safeBigInt(data.loan_last_accrual_at),
       total_playtime_seconds: safeBigInt(data.total_playtime_seconds),
       ...(data.owned_premium_product_ids?.length ? { owned_premium_product_ids: data.owned_premium_product_ids } : {}),
       ...(data.buildings_data ? { buildings_data: data.buildings_data } : {}),
       stokens: data.stokens,
       lottery_tickets: data.lottery_tickets,
+      ...(data.shady_sam_swaps ? { shady_sam_swaps: data.shady_sam_swaps } : {}),
+      ...(data.wandering_trader_perm_buffs
+        ? { wandering_trader_perm_buffs: data.wandering_trader_perm_buffs }
+        : {}),
+      ...(data.powerup_cooldowns ? { powerup_cooldowns: data.powerup_cooldowns } : {}),
+      gems: data.gems,
+      heavenly_chips: data.heavenly_chips,
+      total_hc_earned: data.total_hc_earned,
+      owned_ascension_node_ids: data.owned_ascension_node_ids,
     });
 
     // FINAL CHECK: If version was provided and has changed, skip this save (a force save happened)
@@ -637,11 +652,26 @@ export function keepaliveSave(data: Partial<UserGameData> & { user_id: string; u
     total_golden_cookies_collected: data.total_golden_cookies_collected,
     total_miners_sacrificed: data.total_miners_sacrificed,
     last_tax_time: safeBigInt(data.last_tax_time),
+    loan_amount:
+      data.loan_amount !== undefined && typeof data.loan_amount === 'number' && Number.isFinite(data.loan_amount)
+        ? Math.min(Math.max(0, data.loan_amount), NUMBER_CAP)
+        : undefined,
+    loan_taken_at: safeBigInt(data.loan_taken_at),
+    loan_last_accrual_at: safeBigInt(data.loan_last_accrual_at),
     total_playtime_seconds: safeBigInt(data.total_playtime_seconds),
     ...(data.owned_premium_product_ids?.length ? { owned_premium_product_ids: data.owned_premium_product_ids } : {}),
     ...(data.buildings_data ? { buildings_data: data.buildings_data } : {}),
     stokens: data.stokens,
     lottery_tickets: data.lottery_tickets,
+    ...(data.shady_sam_swaps ? { shady_sam_swaps: data.shady_sam_swaps } : {}),
+    ...(data.wandering_trader_perm_buffs
+      ? { wandering_trader_perm_buffs: data.wandering_trader_perm_buffs }
+      : {}),
+    ...(data.powerup_cooldowns ? { powerup_cooldowns: data.powerup_cooldowns } : {}),
+    gems: data.gems,
+    heavenly_chips: data.heavenly_chips,
+    total_hc_earned: data.total_hc_earned,
+    owned_ascension_node_ids: data.owned_ascension_node_ids,
   });
 
   // Use correct table based on game mode (was hardcoded to user_game_data before - corrupted hard mode players!)

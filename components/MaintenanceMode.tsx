@@ -1,7 +1,7 @@
 'use client';
 
 // Set this to false to disable maintenance mode
-const MAINTENANCE_MODE_ENABLED = true;
+const MAINTENANCE_MODE_ENABLED = false;
 
 export default function MaintenanceMode({ children }: { children: React.ReactNode }) {
   if (!MAINTENANCE_MODE_ENABLED) {

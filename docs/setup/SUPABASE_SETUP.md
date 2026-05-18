@@ -14,7 +14,9 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key_here
 
 ## Step 2: Create Database Tables
 
-Run the following SQL in your Supabase SQL Editor:
+**Easiest:** open `sql/00_EMPLOYEES_AND_TASKS.sql` in this repo and run that entire file in the Supabase SQL Editor first.
+
+Or paste the equivalent SQL below:
 
 ```sql
 -- Create employees table

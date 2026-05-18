@@ -10,7 +10,7 @@ import {
   getPrestigeRockRequirement,
   getPrestigePickaxeRequirement,
   getPrestigeMoneyRequirement,
-  getPrestigePriceMultiplier,
+  getPurchasePriceMultiplier,
 } from '@/types/game';
 import { ROCKS, PICKAXES } from '@/lib/gameData';
 
@@ -89,7 +89,10 @@ export default function PrestigeButton() {
 
   const nextPrestigeNum = gameState.prestigeCount + 1;
 
-  const runDurationMs = Date.now() - (gameState.gameStartTime || Date.now());
+  // Avoid hydration mismatch: gameStartTime often only exists client-side after
+  // context/localStorage hydrate; Date.now() also differs SSR vs browser.
+  const runDurationMs =
+    mounted && gameState.gameStartTime ? Date.now() - gameState.gameStartTime : 0;
 
   const hcPreviewLine = useMemo(() => {
     if (nextPrestigeNum < 10) return 'Heavenly chips: unlock at prestige 10 (+1 HC, Ascension tree).';
@@ -113,7 +116,7 @@ export default function PrestigeButton() {
       if (!def) pickPct = 0;
       else {
         const scaled = Math.floor(
-          def.price * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0),
+          def.price * getPurchasePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0, gameState.equippedTrinketIds),
         );
         pickPct = scaled <= 0 ? 1 : Math.min(1, gameState.yatesDollars / scaled);
       }
@@ -132,9 +135,12 @@ export default function PrestigeButton() {
     gameState.prestigeCount,
     gameState.isHardMode,
     gameState.sideLevel,
+    gameState.equippedTrinketIds,
   ]);
 
-  const conciseTitle = `×${gameState.prestigeMultiplier.toFixed(2)} · ${formatPrestigeRunDuration(runDurationMs)} · ${hcPreviewLine.replace(/^Heavenly chips: /, '')}`;
+  const conciseTitle = mounted
+    ? `×${gameState.prestigeMultiplier.toFixed(2)} · ${formatPrestigeRunDuration(runDurationMs)} · ${hcPreviewLine.replace(/^Heavenly chips: /, '')}`
+    : `×${gameState.prestigeMultiplier.toFixed(2)} · … · ${hcPreviewLine.replace(/^Heavenly chips: /, '')}`;
 
   const handlePrestige = async () => {
     setIsPrestiging(true);
@@ -328,7 +334,7 @@ export default function PrestigeButton() {
           </p>
           <p className="mt-1 text-gray-300">
             <span className="font-bold text-gray-400">This prestige: </span>
-            {formatPrestigeRunDuration(runDurationMs)}
+            {mounted ? formatPrestigeRunDuration(runDurationMs) : '…'}
           </p>
           <p className="mt-1 text-amber-100/95">{hcPreviewLine}</p>
         </div>

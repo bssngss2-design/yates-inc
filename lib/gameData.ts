@@ -260,6 +260,14 @@ export const PICKAXES: Pickaxe[] = [
     moneyMultiplier: 3.0,
     specialAbility: '3x money',
   },
+  {
+    id: 27,
+    name: 'D1',
+    image: '/game/d1-player-pack.png',
+    price: 0, // not purchasable — granted by promo unlock only
+    clickPower: 2_000_000,
+    specialAbility: 'ARISE · ×2.5 money · ×3 bonuses · shop upgrade every 5 clicks',
+  },
 ];
 
 export const ROCKS: Rock[] = [

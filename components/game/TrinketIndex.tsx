@@ -7,10 +7,10 @@ import {
   RARITY_COLORS,
   TrinketRarity,
   TrinketEffects,
+  Trinket,
   RELIC_MULTIPLIERS,
   TALISMAN_MULTIPLIERS,
-  YATES_TOTEM_RELIC_EFFECTS,
-  YATES_TOTEM_TALISMAN_EFFECTS,
+  getDisplayTrinketEffects,
 } from '@/types/game';
 import Image from 'next/image';
 
@@ -23,18 +23,9 @@ type ViewMode = 'base' | 'talisman' | 'relic';
 
 const RARITY_ORDER: TrinketRarity[] = ['common', 'rare', 'epic', 'legendary', 'mythic', 'secret'];
 
-function getEffectsForMode(trinketId: string, baseEffects: TrinketEffects, rarity: TrinketRarity, mode: ViewMode): TrinketEffects {
-  if (mode === 'base') return baseEffects;
-  if (trinketId === 'yates_totem') {
-    return mode === 'relic' ? YATES_TOTEM_RELIC_EFFECTS : YATES_TOTEM_TALISMAN_EFFECTS;
-  }
-  const mult = mode === 'relic' ? (RELIC_MULTIPLIERS[rarity] || 1) : (TALISMAN_MULTIPLIERS[rarity] || 1);
-  const scaled: TrinketEffects = {};
-  for (const [key, val] of Object.entries(baseEffects)) {
-    if (typeof val === 'number') (scaled as Record<string, number>)[key] = val * mult;
-    else if (typeof val === 'boolean') (scaled as Record<string, boolean>)[key] = val;
-  }
-  return scaled;
+function getEffectsForMode(trinket: Trinket, mode: ViewMode): TrinketEffects {
+  if (mode === 'base') return trinket.effects;
+  return getDisplayTrinketEffects(trinket, mode);
 }
 
 function EffectsList({ effects, compact }: { effects: TrinketEffects; compact?: boolean }) {
@@ -51,7 +42,26 @@ function EffectsList({ effects, compact }: { effects: TrinketEffects; compact?: 
   if (effects.couponLuckBonus) lines.push({ icon: '🍀', label: `${fmt(effects.couponLuckBonus)} coupon luck`, color: 'text-emerald-400' });
   if (effects.minerMoneyBonus) lines.push({ icon: '💎', label: `${fmt(effects.minerMoneyBonus)} miner $`, color: 'text-teal-400' });
   if (effects.trinketBonus) lines.push({ icon: '✨', label: `${fmt(effects.trinketBonus)} trinket boost`, color: 'text-pink-400' });
-  if (effects.bankInterestBonus) lines.push({ icon: '🏦', label: `+${Math.round((effects.bankInterestBonus - 1) * 100)}% bank interest`, color: 'text-amber-400' });
+  if (effects.bankInterestBonus != null && effects.bankInterestBonus !== 1 && effects.bankInterestBonus !== 0) {
+    lines.push({ icon: '🏦', label: `×${effects.bankInterestBonus} bank interest`, color: 'text-amber-400' });
+  }
+  if (effects.luckBonus != null && effects.luckBonus !== 0) {
+    lines.push({
+      icon: '🍀',
+      label: `${effects.luckBonus > 0 ? '+' : ''}${effects.luckBonus} luck`,
+      color: 'text-emerald-400',
+    });
+  }
+  if (effects.dropChanceBonus != null && effects.dropChanceBonus !== 0) {
+    lines.push({
+      icon: '🎯',
+      label: `${effects.dropChanceBonus > 0 ? '+' : ''}${effects.dropChanceBonus} drops`,
+      color: 'text-indigo-400',
+    });
+  }
+  if (effects.shopPriceBonus != null && effects.shopPriceBonus !== 0) {
+    lines.push({ icon: '💸', label: `${fmt(effects.shopPriceBonus)} shop prices`, color: 'text-rose-400' });
+  }
   if (effects.prestigeProtection) lines.push({ icon: '🛡️', label: 'Keep $ on prestige', color: 'text-sky-400' });
 
   if (lines.length === 0) return <span className="text-gray-600 text-[9px]">No effects</span>;
@@ -140,10 +150,8 @@ export default function TrinketIndex({ isOpen, onClose }: TrinketIndexProps) {
 
           {viewMode !== 'base' && (
             <p className="text-[10px] sm:text-xs text-gray-400 mt-1">
-              Showing {viewMode === 'talisman' ? '🌑 Talisman (Dark)' : '☀️ Relic (Light)'} stats for each trinket
-              {viewMode === 'talisman'
-                ? ` — multiplied by Dark path conversion rates`
-                : ` — multiplied by Light path conversion rates`}
+              Showing {viewMode === 'talisman' ? '🌑 Talisman (Dark)' : '☀️ Relic (Light)'} stats.
+              Some trinkets use fixed converted stats instead of simple × scaling.
             </p>
           )}
 
@@ -212,7 +220,7 @@ export default function TrinketIndex({ isOpen, onClose }: TrinketIndexProps) {
                     const ownsRelic = gameState.ownedTrinketIds.includes(relicId);
                     const ownsTalisman = gameState.ownedTrinketIds.includes(talismanId);
 
-                    const displayEffects = getEffectsForMode(trinket.id, trinket.effects, trinket.rarity, viewMode);
+                    const displayEffects = getEffectsForMode(trinket, viewMode);
 
                     return (
                       <div

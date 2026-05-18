@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 interface PathSelectionProps {
@@ -37,7 +38,14 @@ export default function PathSelection({ onSelectPath }: PathSelectionProps) {
                 {/* Tutorial Section */}
                 <div className="bg-black/40 backdrop-blur-sm rounded-xl p-6 border border-gray-700/50 space-y-4">
                     <h2 className="text-xl font-bold text-yellow-400 border-b border-gray-700 pb-2">📖 Tutorial</h2>
-                    
+                    <p className="text-sm text-gray-400">
+                      When does it actually end?{' '}
+                      <Link href="/gamebeat" className="text-emerald-400 font-semibold underline hover:text-emerald-300 underline-offset-2">
+                        Gamebeat
+                      </Link>{' '}
+                      — unofficial checklist so you know what &quot;I beat it&quot; can mean here.
+                    </p>
+
                     <div className="space-y-3 text-gray-300 text-sm sm:text-base">
                         <p>
                             <span className="text-cyan-400 font-bold">Press I</span> to open Cheats terminal, but you do need to be an Employee or have the Access code.

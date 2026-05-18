@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import Image from 'next/image';
 import { useGame } from '@/contexts/GameContext';
-import { TRINKETS, RARITY_COLORS, Trinket, RELIC_MULTIPLIERS, TALISMAN_MULTIPLIERS, YATES_TOTEM_RELIC_EFFECTS, YATES_TOTEM_TALISMAN_EFFECTS, TrinketEffects } from '@/types/game';
+import { TRINKETS, RARITY_COLORS, Trinket, RELIC_MULTIPLIERS, TALISMAN_MULTIPLIERS, getDisplayTrinketEffects, summarizeTrinketEffectsParts } from '@/types/game';
 
 /** w-72 (288px) — keep in sync with menu class */
 const SELECTOR_W = 400;
@@ -101,7 +101,7 @@ export default function TrinketSlot() {
   const bonuses = getTotalBonuses();
   
   // Check if any bonuses are active
-  const hasActiveBonuses = Object.values(bonuses).some(v => v > 0);
+  const hasActiveBonuses = Object.values(bonuses).some(v => v !== 0);
   
   // Check for active sacrifice buff
   const hasActiveSacrificeBuff = gameState.sacrificeBuff && now < gameState.sacrificeBuff.endsAt;
@@ -191,7 +191,16 @@ export default function TrinketSlot() {
                   : 'none',
               }}
               title={trinket 
-                ? `${trinket.name}${isRelic ? ' (Relic)' : isTalisman ? ' (Talisman)' : ''}: ${trinket.description}${equippedItem && equippedItem.multiplier > 1 ? ` (${equippedItem.multiplier}x)` : ''}` 
+                ? (() => {
+                    const suffix = isRelic ? ' (Relic)' : isTalisman ? ' (Talisman)' : '';
+                    const body =
+                      isRelic || isTalisman
+                        ? summarizeTrinketEffectsParts(
+                            getDisplayTrinketEffects(trinket, isRelic ? 'relic' : 'talisman'),
+                          ).join(', ')
+                        : trinket.description;
+                    return `${trinket.name}${suffix}: ${body}`;
+                  })()
                 : 'Empty slot - click to equip'}
             >
               {trinket ? (
@@ -230,7 +239,9 @@ export default function TrinketSlot() {
             {bonuses.moneyBonus > 0 && <span className="text-green-400">💰</span>}
             {bonuses.rockDamageBonus > 0 && <span className="text-orange-400">⛏️</span>}
             {bonuses.minerDamageBonus > 0 && <span className="text-yellow-400">👷</span>}
-            {bonuses.couponBonus > 0 && <span className="text-purple-400">🎟️</span>}
+            {bonuses.couponBonus !== 0 && <span className="text-purple-400">🎟️</span>}
+            {bonuses.luckBonus !== 0 && <span className="text-emerald-400">🍀</span>}
+            {bonuses.dropChanceBonus !== 0 && <span className="text-indigo-400">🎯</span>}
             <span className="text-gray-300 text-[8px]">tap</span>
           </div>
           
@@ -246,14 +257,29 @@ export default function TrinketSlot() {
                 ⛏️+{(bonuses.rockDamageBonus * 100).toFixed(0)}%
               </span>
             )}
+            {bonuses.luckBonus !== 0 && (
+              <span className="bg-emerald-900/50 text-emerald-400 px-1.5 py-0.5 rounded">
+                🍀{bonuses.luckBonus > 0 ? '+' : ''}{bonuses.luckBonus.toFixed(1)}
+              </span>
+            )}
+            {bonuses.couponBonus !== 0 && (
+              <span className="bg-purple-900/50 text-purple-400 px-1.5 py-0.5 rounded">
+                🎟️{bonuses.couponBonus > 0 ? '+' : ''}{(bonuses.couponBonus * 100).toFixed(0)}%
+              </span>
+            )}
+            {bonuses.dropChanceBonus !== 0 && (
+              <span className="bg-indigo-900/50 text-indigo-300 px-1.5 py-0.5 rounded">
+                🎯{bonuses.dropChanceBonus > 0 ? '+' : ''}{bonuses.dropChanceBonus.toFixed(1)}
+              </span>
+            )}
+            {bonuses.minerSpeedBonus > 0 && (
+              <span className="bg-cyan-900/50 text-cyan-400 px-1.5 py-0.5 rounded">
+                🏃+{(bonuses.minerSpeedBonus * 100).toFixed(0)}%
+              </span>
+            )}
             {bonuses.minerDamageBonus > 0 && (
               <span className="bg-yellow-900/50 text-yellow-400 px-1.5 py-0.5 rounded">
                 👷+{(bonuses.minerDamageBonus * 100).toFixed(0)}%
-              </span>
-            )}
-            {bonuses.couponBonus > 0 && (
-              <span className="bg-purple-900/50 text-purple-400 px-1.5 py-0.5 rounded">
-                🎟️+{(bonuses.couponBonus * 100).toFixed(0)}%
               </span>
             )}
           </div>
@@ -366,10 +392,22 @@ export default function TrinketSlot() {
                   <span>+{(bonuses.clickSpeedBonus * 100).toFixed(0)}%</span>
                 </div>
               )}
-              {bonuses.couponBonus > 0 && (
+              {bonuses.couponBonus !== 0 && (
                 <div className="flex justify-between text-purple-400">
-                  <span>🎟️ Coupon Luck</span>
-                  <span>+{(bonuses.couponBonus * 100).toFixed(0)}%</span>
+                  <span>🎟️ Lottery / luck chain</span>
+                  <span>{bonuses.couponBonus > 0 ? '+' : ''}{(bonuses.couponBonus * 100).toFixed(0)}%</span>
+                </div>
+              )}
+              {bonuses.luckBonus !== 0 && (
+                <div className="flex justify-between text-emerald-400">
+                  <span>🍀 Luck</span>
+                  <span>{bonuses.luckBonus > 0 ? '+' : ''}{bonuses.luckBonus.toFixed(1)}</span>
+                </div>
+              )}
+              {bonuses.dropChanceBonus !== 0 && (
+                <div className="flex justify-between text-indigo-400">
+                  <span>🎯 Drops</span>
+                  <span>{bonuses.dropChanceBonus > 0 ? '+' : ''}{bonuses.dropChanceBonus.toFixed(1)}</span>
                 </div>
               )}
               {bonuses.minerSpeedBonus > 0 && (
@@ -599,33 +637,14 @@ export default function TrinketSlot() {
                         )}
                       </div>
                       <p className="text-[10px] text-gray-400 truncate">
-                        {item.multiplier > 1 ? (
-                          <span className={isRelic ? 'text-yellow-400' : 'text-purple-400'}>
-                            {(() => {
-                              const isYates = item.baseTrinket.id === 'yates_totem';
-                              const effects: TrinketEffects = isYates
-                                ? (isRelic ? YATES_TOTEM_RELIC_EFFECTS : YATES_TOTEM_TALISMAN_EFFECTS)
-                                : item.baseTrinket.effects;
-                              const mult = isYates ? 1 : item.multiplier;
-                              const entries = Object.entries(effects).filter(([, v]) => typeof v === 'number' && v !== 0);
-                              const statEntries = entries.filter(([k]) => k !== 'bankInterestBonus');
-                              const bankEntry = entries.find(([k]) => k === 'bankInterestBonus');
-                              const allSame = statEntries.length > 1 && statEntries.every(([, v]) => v === statEntries[0][1]);
-                              const parts: string[] = [];
-                              if (allSame && statEntries.length > 0) {
-                                parts.push(`+${((statEntries[0][1] as number) * mult * 100).toFixed(0)}% everything`);
-                              } else {
-                                for (const [key, value] of statEntries) {
-                                  const label = key.replace(/Bonus$/i, '').replace(/([A-Z])/g, ' $1').trim().toLowerCase();
-                                  parts.push(`+${((value as number) * mult * 100).toFixed(0)}% ${label}`);
-                                }
-                              }
-                              if (bankEntry) parts.push(`+${Math.round(((bankEntry[1] as number) - 1) * 100)}% bank interest`);
-                              return parts.join(', ');
-                            })()}
-                          </span>
-                        ) : (
+                        {item.type === 'trinket' ? (
                           item.baseTrinket.description
+                        ) : (
+                          <span className={isRelic ? 'text-yellow-400' : 'text-purple-400'}>
+                            {summarizeTrinketEffectsParts(
+                              getDisplayTrinketEffects(item.baseTrinket, isRelic ? 'relic' : 'talisman'),
+                            ).join(', ')}
+                          </span>
                         )}
                       </p>
                     </div>

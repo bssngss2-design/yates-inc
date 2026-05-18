@@ -59,6 +59,16 @@ export type GameTotalBonuses = {
   dropChanceBonus: number;
 };
 
+/** Single row in the bonus sources list: additive (+X%) or multiplicative (×N). */
+export type BonusBreakdownEntry = {
+  source: string;
+  /** Additive fraction, e.g. 0.12 = +12% (for multipliers use 0). */
+  value: number;
+  kind?: 'additive' | 'multiplier' | 'bonus_field_scale';
+  /** When kind === 'multiplier': bonus = (1+bonus)*multiplier - 1. When kind === 'bonus_field_scale': bonus *= multiplier (D1 pack). */
+  multiplier?: number;
+};
+
 // =====================
 // LIGHT VS DARKNESS PATH SYSTEM
 // =====================
@@ -177,6 +187,10 @@ export const RITUAL_MINER_SACRIFICE = 420; // Must sacrifice 420 miners
 export const DARKNESS_PICKAXE_IDS = [18, 21, 25]; // Demon, Nightmare, Galaxy
 export const LIGHT_PICKAXE_IDS = [22, 23]; // Sun, Light Saber
 export const YATES_PICKAXE_ID = 26; // Only from Golden Cookie
+/** D1 Player Pack — promo unlock only, hidden from shop until owned; persists through prestige */
+export const D1_PICKAXE_ID = 27;
+/** Not part of sequential pick shop chain or prestige pick progression */
+export const NON_PROGRESSION_PICKAXE_IDS: readonly number[] = [YATES_PICKAXE_ID, D1_PICKAXE_ID];
 
 // Path-restricted rocks (can only mine if on that path)
 export const DARKNESS_ROCK_IDS = [21, 24]; // Devil, Moon
@@ -254,6 +268,15 @@ export interface ExoticRockState {
   currentHP: number;
   maxHP: number;
 }
+
+/** Permanent luck / drop bonuses from promo fallback (e.g. epic trinket pool empty). */
+export interface PromoPermanentBonuses {
+  luckBonus: number;
+  dropChanceBonus: number;
+}
+
+/** Shady Sam / promo crate tier (persisted queue). */
+export type PromoMysteryCrateTier = 'sketchy' | 'suspicious' | 'cursed';
 
 export interface GameState {
   yatesDollars: number;
@@ -399,6 +422,14 @@ export interface GameState {
   totalHCEarned: number;                     // Lifetime HC earned (for display)
   ownedAscensionNodeIds: string[];           // Purchased ascension tree nodes
   isAscensionTreeOpen: boolean;              // Freeze all income while tree is open
+  // Promo codes (one-time per save slot; persisted to Supabase)
+  redeemedPromoCodes: string[];
+  hasD1PlayerPack: boolean;
+  promoPermanentBonuses: PromoPermanentBonuses;
+  /** D1 pack: mine clicks toward +1 random progressive upgrade every 5 mines (Yates pick only). */
+  d1MineCounter: number;
+  /** Promo mystery crates queued for one-by-one reveal (same tiers as Shady Sam boxes). */
+  pendingPromoMysteryCrates: PromoMysteryCrateTier[];
 }
 
 // Premium product buff definitions
@@ -586,6 +617,10 @@ export interface TrinketEffects {
   couponLuckBonus?: number;   // % extra coupon luck
   /** Flat luck points (same unit as ascension luck nodes; stacks into Luck + lottery odds) */
   luckBonus?: number;
+  /** Flat drop chance points (same unit as ascension drop nodes; lottery ticket odds) */
+  dropChanceBonus?: number;
+  /** Additive purchase price penalty as fraction of cost (e.g. 0.15 = +15% pickaxes, miners, trinkets, buildings) */
+  shopPriceBonus?: number;
   allBonus?: number;          // % bonus to everything
   prestigeProtection?: boolean; // Keep money on prestige (consumable)
   trinketBonus?: number;      // % boost to all trinket effects
@@ -813,7 +848,6 @@ export const TRINKETS: Trinket[] = [
       minerSpeedBonus: 1.00
     },
     description: '+150% money, +230% click speed, +45% pcx/miner dmg, +100% miner speed',
-    // Talisman: 200/200/150/150/200 | Relic: 150/150/100/100/150 (money, click, dmg, minerDmg, minerSpd)
   },
   {
     id: 'silver_trophy',
@@ -980,40 +1014,46 @@ export const YATES_TOTEM_TALISMAN_EFFECTS: TrinketEffects = {
 
 // Arghtfavts Trophy relic/talisman overrides (money, click, dmg, minerDmg, minerSpd)
 export const GOLDEN_TROPHY_TALISMAN_EFFECTS: TrinketEffects = {
-  moneyBonus: 2.0,
-  clickSpeedBonus: 2.0,
-  rockDamageBonus: 1.5,
-  minerDamageBonus: 1.5,
-  minerSpeedBonus: 2.0,
+  moneyBonus: 3.6,
+  clickSpeedBonus: 3.0,
+  rockDamageBonus: 2.7,
+  minerDamageBonus: 2.7,
+  minerSpeedBonus: 2.7,
 };
 export const GOLDEN_TROPHY_RELIC_EFFECTS: TrinketEffects = {
-  moneyBonus: 1.5,
-  clickSpeedBonus: 1.5,
-  rockDamageBonus: 1.0,
-  minerDamageBonus: 1.0,
-  minerSpeedBonus: 1.5,
+  moneyBonus: 3.4,
+  clickSpeedBonus: 2.5,
+  rockDamageBonus: 2.5,
+  minerDamageBonus: 2.4,
+  minerSpeedBonus: 2.45,
 };
 
 // Void Merchant's Pact relic/talisman overrides
 export const VOID_MERCHANT_RELIC_EFFECTS: TrinketEffects = {
-  moneyBonus: 1.15,
-  clickSpeedBonus: 1.15,
-  allBonus: 1.15,
-  bankInterestBonus: 10,
+  allBonus: 2.0,
+  bankInterestBonus: 119,
+  luckBonus: -7,
+  dropChanceBonus: -7,
+  shopPriceBonus: 0.19,
 };
 export const VOID_MERCHANT_TALISMAN_EFFECTS: TrinketEffects = {
-  moneyBonus: 1.35,
-  clickSpeedBonus: 1.35,
-  allBonus: 1.35,
-  bankInterestBonus: 10,
+  allBonus: 2.8,
+  bankInterestBonus: 119,
+  luckBonus: -4,
+  dropChanceBonus: -4,
+  shopPriceBonus: 0.15,
 };
 
 // Fortune's Gambit relic/talisman overrides
 export const FORTUNES_GAMBIT_RELIC_EFFECTS: TrinketEffects = {
-  allBonus: 0.75,
+  allBonus: 2.5,
+  luckBonus: 3,
+  dropChanceBonus: 3,
 };
 export const FORTUNES_GAMBIT_TALISMAN_EFFECTS: TrinketEffects = {
-  allBonus: 0.99,
+  allBonus: 3.0,
+  luckBonus: 5,
+  dropChanceBonus: 5,
 };
 
 /** Returns hardcoded relic/talisman override effects for special trinkets, or null if none. */
@@ -1028,6 +1068,127 @@ export function getSpecialTrinketOverride(baseId: string, isRelic: boolean, isTa
   const entry = OVERRIDES[baseId];
   if (!entry) return null;
   return isRelic ? entry.relic : entry.talisman;
+}
+
+/** Effects for UI lists/tooltips: relic/talisman use overrides when defined, else scaled base stats. */
+export function getDisplayTrinketEffects(trinket: Trinket, mode: 'base' | 'relic' | 'talisman'): TrinketEffects {
+  if (mode === 'base') return trinket.effects;
+  const isRelic = mode === 'relic';
+  const isTalisman = mode === 'talisman';
+  const special = getSpecialTrinketOverride(trinket.id, isRelic, isTalisman);
+  if (special) return { ...special };
+  const mult = isRelic ? RELIC_MULTIPLIERS[trinket.rarity] || 1 : TALISMAN_MULTIPLIERS[trinket.rarity] || 1;
+  const scaled: TrinketEffects = {};
+  for (const [key, val] of Object.entries(trinket.effects)) {
+    if (typeof val === 'number') (scaled as Record<string, number>)[key] = val * mult;
+    else if (typeof val === 'boolean') (scaled as Record<string, boolean>)[key] = val;
+  }
+  return scaled;
+}
+
+/** Human-readable effect chips for trinket slot / tooltips (aligned with game math, not static descriptions). */
+export function summarizeTrinketEffectsParts(effects: TrinketEffects): string[] {
+  const parts: string[] = [];
+  const pct = (v: number) => `${v >= 0 ? '+' : ''}${(v * 100).toFixed(0)}%`;
+  const addPct = (label: string, v: number | undefined) => {
+    if (v == null || v === 0) return;
+    parts.push(`${pct(v)} ${label}`);
+  };
+  if (effects.allBonus) addPct('all', effects.allBonus);
+  if (effects.moneyBonus) addPct('money', effects.moneyBonus);
+  if (effects.rockDamageBonus) addPct('pickaxe dmg', effects.rockDamageBonus);
+  if (effects.minerDamageBonus) addPct('miner dmg', effects.minerDamageBonus);
+  if (effects.minerSpeedBonus) addPct('miner spd', effects.minerSpeedBonus);
+  if (effects.clickSpeedBonus) addPct('click spd', effects.clickSpeedBonus);
+  if (effects.couponBonus) addPct('lottery', effects.couponBonus);
+  if (effects.couponLuckBonus) addPct('coupon luck', effects.couponLuckBonus);
+  if (effects.minerMoneyBonus) addPct('miner $', effects.minerMoneyBonus);
+  if (effects.trinketBonus) addPct('trinket boost', effects.trinketBonus);
+  if (effects.bankInterestBonus != null && effects.bankInterestBonus !== 0 && effects.bankInterestBonus !== 1) {
+    parts.push(`×${effects.bankInterestBonus} bank interest`);
+  }
+  if (effects.luckBonus != null && effects.luckBonus !== 0) {
+    parts.push(`${effects.luckBonus > 0 ? '+' : ''}${effects.luckBonus} luck`);
+  }
+  if (effects.dropChanceBonus != null && effects.dropChanceBonus !== 0) {
+    parts.push(`${effects.dropChanceBonus > 0 ? '+' : ''}${effects.dropChanceBonus} drops`);
+  }
+  if (effects.shopPriceBonus != null && effects.shopPriceBonus !== 0) {
+    addPct('purchase prices', effects.shopPriceBonus);
+  }
+  if (effects.prestigeProtection) parts.push('keep $ on prestige');
+  return parts;
+}
+
+/**
+ * Sums equipped trinket effects that are still scaled by global trinket synergy (excludes relic/talisman overrides).
+ * Matches the `bonuses` bucket before `* trinketMultiplier` in GameContext.calculateTotalBonuses.
+ */
+export function getNonSpecialEquippedTrinketBonusRaw(equippedTrinketIds: string[]): GameTotalBonuses {
+  const raw: GameTotalBonuses = {
+    moneyBonus: 0,
+    rockDamageBonus: 0,
+    clickSpeedBonus: 0,
+    couponBonus: 0,
+    minerSpeedBonus: 0,
+    minerDamageBonus: 0,
+    luckBonus: 0,
+    dropChanceBonus: 0,
+  };
+  for (const itemId of equippedTrinketIds) {
+    const isRelic = itemId.endsWith('_relic');
+    const isTalisman = itemId.endsWith('_talisman');
+    const baseId = isRelic ? itemId.replace('_relic', '') : isTalisman ? itemId.replace('_talisman', '') : itemId;
+    const trinket = TRINKETS.find((t) => t.id === baseId);
+    if (!trinket) continue;
+    if (getSpecialTrinketOverride(baseId, isRelic, isTalisman)) continue;
+    const e = trinket.effects;
+    const mult = isRelic
+      ? RELIC_MULTIPLIERS[trinket.rarity] || 1
+      : isTalisman
+        ? TALISMAN_MULTIPLIERS[trinket.rarity] || 1
+        : 1;
+    raw.moneyBonus += ((e.moneyBonus || 0) + (e.allBonus || 0) + (e.minerMoneyBonus || 0)) * mult;
+    raw.rockDamageBonus += ((e.rockDamageBonus || 0) + (e.allBonus || 0)) * mult;
+    raw.clickSpeedBonus += ((e.clickSpeedBonus || 0) + (e.allBonus || 0)) * mult;
+    raw.couponBonus +=
+      ((e.couponBonus || 0) + (e.couponLuckBonus || 0) + (e.allBonus || 0) + (e.luckBonus || 0)) * mult;
+    raw.minerSpeedBonus += ((e.minerSpeedBonus || 0) + (e.allBonus || 0)) * mult;
+    raw.minerDamageBonus += ((e.minerDamageBonus || 0) + (e.allBonus || 0)) * mult;
+    raw.luckBonus += (e.luckBonus || 0) * mult;
+    raw.dropChanceBonus += (e.dropChanceBonus || 0) * mult;
+  }
+  return raw;
+}
+
+/** Sum of shopPriceBonus from equipped trinkets (0.15 = +15% on purchases). */
+export function sumEquippedShopPriceBonus(equippedTrinketIds: string[] | undefined | null): number {
+  if (!equippedTrinketIds?.length) return 0;
+  let sum = 0;
+  for (const itemId of equippedTrinketIds) {
+    const isRelic = itemId.endsWith('_relic');
+    const isTalisman = itemId.endsWith('_talisman');
+    const baseId = isRelic ? itemId.replace('_relic', '') : isTalisman ? itemId.replace('_talisman', '') : itemId;
+    const trinket = TRINKETS.find((t) => t.id === baseId);
+    if (!trinket) continue;
+    const e = getSpecialTrinketOverride(baseId, isRelic, isTalisman) || trinket.effects;
+    sum += e.shopPriceBonus || 0;
+  }
+  return sum;
+}
+
+export function applyShopPricePenalty(baseCost: number, equippedTrinketIds: string[] | undefined | null): number {
+  return Math.floor(baseCost * (1 + sumEquippedShopPriceBonus(equippedTrinketIds)));
+}
+
+/** Prestige-scaled price multiplier including trinket shop penalties (pickaxes, trinkets, autoclicker, miners). */
+export function getPurchasePriceMultiplier(
+  prestigeCount: number,
+  isHardMode: boolean = false,
+  sideLevel: number = 0,
+  equippedTrinketIds: string[] | undefined | null = [],
+): number {
+  return getPrestigePriceMultiplier(prestigeCount, isHardMode, sideLevel) * (1 + sumEquippedShopPriceBonus(equippedTrinketIds));
 }
 
 // =====================
@@ -1077,9 +1238,15 @@ export function getPrestigePriceMultiplier(prestigeCount: number, isHardMode: bo
 }
 
 // Get miner cost with prestige scaling (10% increase every 5 prestiges)
-export function getMinerCost(currentMinerCount: number, prestigeCount: number = 0, isHardMode: boolean = false, sideLevel: number = 0): number {
+export function getMinerCost(
+  currentMinerCount: number,
+  prestigeCount: number = 0,
+  isHardMode: boolean = false,
+  sideLevel: number = 0,
+  equippedTrinketIds: string[] | undefined | null = [],
+): number {
   const baseCost = Math.floor(MINER_BASE_COST * Math.pow(MINER_COST_MULTIPLIER, currentMinerCount));
-  return Math.floor(baseCost * getPrestigePriceMultiplier(prestigeCount, isHardMode, sideLevel));
+  return Math.floor(baseCost * getPurchasePriceMultiplier(prestigeCount, isHardMode, sideLevel, equippedTrinketIds));
 }
 
 // =====================
@@ -2862,6 +3029,41 @@ export function getProgressiveUpgradeBonus(upgrade: ProgressiveUpgrade, currentL
   return upgrade.baseValue + (upgrade.valuePerLevel * (currentLevel - 1));
 }
 
+/** Additive bonuses from Shop → Upgrades tab (applied like prestige-token upgrades — not multiplied by trinket synergy). */
+export function sumProgressiveUpgradeBonuses(
+  progressiveUpgrades: ProgressiveUpgradeState,
+): Pick<GameTotalBonuses, 'moneyBonus' | 'rockDamageBonus' | 'clickSpeedBonus' | 'minerSpeedBonus' | 'minerDamageBonus'> {
+  let moneyBonus = 0;
+  let rockDamageBonus = 0;
+  let clickSpeedBonus = 0;
+  let minerSpeedBonus = 0;
+  let minerDamageBonus = 0;
+  for (const pu of PROGRESSIVE_UPGRADES) {
+    const level = progressiveUpgrades[pu.id] ?? 0;
+    const b = getProgressiveUpgradeBonus(pu, level);
+    if (b === 0) continue;
+    switch (pu.id) {
+      case 'pcxDamage':
+        rockDamageBonus += b;
+        break;
+      case 'money':
+        moneyBonus += b;
+        break;
+      case 'generalSpeed':
+        clickSpeedBonus += b;
+        minerSpeedBonus += b;
+        break;
+      case 'minerSpeed':
+        minerSpeedBonus += b;
+        break;
+      case 'minerDamage':
+        minerDamageBonus += b;
+        break;
+    }
+  }
+  return { moneyBonus, rockDamageBonus, clickSpeedBonus, minerSpeedBonus, minerDamageBonus };
+}
+
 // =====================
 // POWERUP CONSTANTS
 // =====================
@@ -3074,7 +3276,10 @@ export function canBuyBuilding(building: Building, state: GameState): boolean {
   }
   
   // Check cost
-  const cost = getBuildingCost(building, currentCount, state.yatesDollars);
+  const cost = applyShopPricePenalty(
+    getBuildingCost(building, currentCount, state.yatesDollars),
+    state.equippedTrinketIds,
+  );
   return state.yatesDollars >= cost;
 }
 

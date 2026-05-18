@@ -131,7 +131,7 @@ export default function UpdatePage() {
               </h2>
               {entry.upcoming && (
                 <span className="shrink-0 text-[10px] font-bold uppercase tracking-widest text-teal-400/60 border border-teal-400/30 rounded px-1.5 py-0.5">
-                  Upcoming
+                  Coming never
                 </span>
               )}
               {!entry.upcoming && entry.major && (

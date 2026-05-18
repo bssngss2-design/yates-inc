@@ -2,18 +2,19 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef } from 'react';
 import { 
-  GameState, GameTotalBonuses, COUPON_DROP_RATES, COUPON_REQUIREMENTS, ShopStock, 
+  GameState, GameTotalBonuses, BonusBreakdownEntry, getNonSpecialEquippedTrinketBonusRaw, COUPON_DROP_RATES, COUPON_REQUIREMENTS, ShopStock, 
   SHOP_RESTOCK_INTERVAL, SHOP_MIN_ITEMS, SHOP_MAX_ITEMS, SHOP_MIN_QUANTITY, SHOP_MAX_QUANTITY, 
   AUTOCLICKER_COST, PRESTIGE_REQUIREMENTS, YATES_ACCOUNT_ID, getPrestigeRockRequirement, getPrestigePickaxeRequirement, MAX_PRESTIGE_WITH_BUFFS,
   TRINKETS, Trinket, TRINKET_SHOP_REFRESH_INTERVAL, TRINKET_SHOP_MIN_ITEMS, TRINKET_SHOP_MAX_ITEMS,
-  MINER_TICK_INTERVAL, MINER_BASE_DAMAGE, MINER_MAX_COUNT, getMinerCost, getPrestigePriceMultiplier,
+  MINER_TICK_INTERVAL, MINER_BASE_DAMAGE, MINER_MAX_COUNT, getMinerCost, getPurchasePriceMultiplier,
+  applyShopPricePenalty,
   PRESTIGE_UPGRADES, PrestigeUpgrade, PRESTIGE_TOKENS_PER_PRESTIGE, RARITY_COLORS,
   RELIC_CONVERSION_COSTS, TALISMAN_CONVERSION_COSTS, RELIC_MULTIPLIERS, TALISMAN_MULTIPLIERS,
   YATES_TOTEM_RELIC_EFFECTS, YATES_TOTEM_TALISMAN_EFFECTS,
   ACHIEVEMENTS, shouldUnlockAchievement, TITLES,
   // Path system
   GamePath, SacrificeBuff, SACRIFICE_BUFF_TIERS,
-  DARKNESS_PICKAXE_IDS, LIGHT_PICKAXE_IDS, YATES_PICKAXE_ID,
+  DARKNESS_PICKAXE_IDS, LIGHT_PICKAXE_IDS, YATES_PICKAXE_ID, D1_PICKAXE_ID, NON_PROGRESSION_PICKAXE_IDS,
   SIDE_LEVEL_MAX, getDarkSideLevelRequirements, getLightSideLevelRequirements, rollSideLevelBuff, getSideLevelBankInterestRate,
   // Shady Sam
   ShadySamSwap, ShadySamStat, getShadySamSwapCost,
@@ -32,7 +33,7 @@ import {
   LOAN_MAX_AMOUNT, LOAN_DAILY_INTEREST_RATE, LOAN_OPEN_TAB_BONUS_RATE, LOAN_AUTO_REPAY_THRESHOLD,
   BANK_TIERS, BANK_MAX_TIER, getBankDepositCap, getBankTierForAmount,
   TEMPLE_MINER_MONEY_MULTIPLIER, TEMPLE_BUFF_INTERVAL_MIN, TEMPLE_BUFF_INTERVAL_MAX,
-  getProgressiveUpgradeCost, getProgressiveUpgradeBonus,
+  getProgressiveUpgradeCost, getProgressiveUpgradeBonus, sumProgressiveUpgradeBonuses,
   generateShipmentDelivery, getShipmentDeliveryName, EXOTIC_ROCKS, ASCENSION_NODES, AscensionNode, sumAscensionEffects, migrateOwnedAscensionNodeIds, COMBINED_PATH_TITLES, getSpecialTrinketOverride,
   // Wandering Trader system
   WanderingTraderOffer, RouletteResult,
@@ -48,6 +49,8 @@ import { PICKAXES, ROCKS, getPickaxeById, getRockById, getHighestUnlockedRock } 
 import { useAuth } from './AuthContext';
 import { useClient } from './ClientContext';
 import { fetchUserGameData, debouncedSaveUserGameData, flushPendingData, savePurchase, forceImmediateSave, keepaliveSave, getPendingData, fetchUserPurchases, isCorruptNumber, sanitizeNumber, safeAdd, safeMoney } from '@/lib/userDataSync';
+import { openPaidMysteryBox, grantPromoMysteryBox } from '@/lib/shadySamRewards';
+import { applyPromoCode, normalizePromoCodeInput, PROMO_CODE_IDS } from '@/lib/promoCodes';
 import { supabase } from '@/lib/supabase';
 
 // Helper to add product sale contribution to active budget (50% of sale)
@@ -158,7 +161,7 @@ interface GameContextType {
   ownsTrinket: (trinketId: string) => boolean;
   getEquippedTrinkets: () => Trinket[];
   getTotalBonuses: () => GameTotalBonuses;
-  getBonusBreakdown: (stat: 'moneyBonus' | 'rockDamageBonus' | 'clickSpeedBonus' | 'couponBonus' | 'minerSpeedBonus' | 'minerDamageBonus' | 'luckBonus' | 'dropChanceBonus') => { source: string; value: number }[];
+  getBonusBreakdown: (stat: 'moneyBonus' | 'rockDamageBonus' | 'clickSpeedBonus' | 'couponBonus' | 'minerSpeedBonus' | 'minerDamageBonus' | 'luckBonus' | 'dropChanceBonus') => BonusBreakdownEntry[];
   // Relic & Talisman conversion functions
   convertToRelic: (trinketId: string, payWithTokens: boolean) => boolean;  // payWithTokens: true = tokens, false = money
   convertToTalisman: (trinketId: string) => boolean;
@@ -219,6 +222,9 @@ interface GameContextType {
   // Shady Sam (Darkness path)
   addShadySamSwap: (debuffStat: ShadySamStat, buffStat: ShadySamStat, amount: number) => boolean;
   openMysteryBox: (tier: 'sketchy' | 'suspicious' | 'cursed') => { isGood: boolean; reward: string } | null;
+  /** Apply next queued promo crate (after opening animation); returns reward copy for UI. */
+  openPendingPromoMysteryCrate: () => { message: string; remaining: number } | null;
+  redeemPromoCode: (raw: string) => { ok: boolean; error?: string; rewardsSummary?: string[] };
   removeShadySamSwap: (swapId: string) => void;
   // Golden Cookie ritual (Darkness path)
   activateGoldenCookieRitual: () => boolean;
@@ -411,7 +417,11 @@ const defaultGameState: GameState = {
   totalHCEarned: 0,
   ownedAscensionNodeIds: [],
   isAscensionTreeOpen: false,
-  // Premium products
+  redeemedPromoCodes: [],
+  hasD1PlayerPack: false,
+  promoPermanentBonuses: { luckBonus: 0, dropChanceBonus: 0 },
+  d1MineCounter: 0,
+  pendingPromoMysteryCrates: [],
   ownedPremiumProductIds: [],
   // Hard Mode
   isHardMode: false,
@@ -830,7 +840,17 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
                 currentRockId: loadedRockId,
                 currentRockHP: cappedHP,
                 rocksMinedCount: useSupabase ? (supabaseData.rocks_mined_count ?? prev.rocksMinedCount) : prev.rocksMinedCount,
-                ownedPickaxeIds: useSupabase ? (supabaseData.owned_pickaxe_ids?.length ? supabaseData.owned_pickaxe_ids : prev.ownedPickaxeIds) : prev.ownedPickaxeIds,
+                ownedPickaxeIds: (() => {
+                  const baseIds = useSupabase
+                    ? (supabaseData.owned_pickaxe_ids?.length ? supabaseData.owned_pickaxe_ids : prev.ownedPickaxeIds)
+                    : prev.ownedPickaxeIds;
+                  const merged = [...new Set(baseIds)];
+                  const hasD1Flag =
+                    !!(supabaseData as unknown as { has_d1_player_pack?: boolean }).has_d1_player_pack ||
+                    prev.hasD1PlayerPack;
+                  if (hasD1Flag && !merged.includes(D1_PICKAXE_ID)) merged.push(D1_PICKAXE_ID);
+                  return merged.sort((a, b) => a - b);
+                })(),
                 coupons: useSupabase ? {
                   discount30: supabaseData.coupons_30 ?? prev.coupons.discount30,
                   discount50: supabaseData.coupons_50 ?? prev.coupons.discount50,
@@ -986,6 +1006,49 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
                   prev.lotteryTickets || 0,
                   (supabaseData as unknown as { lottery_tickets?: number }).lottery_tickets || 0
                 ),
+                redeemedPromoCodes: (() => {
+                  try {
+                    const raw = (supabaseData as unknown as { redeemed_codes?: string }).redeemed_codes;
+                    const parsed = raw ? JSON.parse(raw) : [];
+                    const fromDb = Array.isArray(parsed) ? parsed : [];
+                    return [...new Set([...(prev.redeemedPromoCodes || []), ...fromDb])];
+                  } catch {
+                    return prev.redeemedPromoCodes || [];
+                  }
+                })(),
+                hasD1PlayerPack: !!(supabaseData as unknown as { has_d1_player_pack?: boolean }).has_d1_player_pack || prev.hasD1PlayerPack,
+                promoPermanentBonuses: (() => {
+                  try {
+                    const raw = (supabaseData as unknown as { promo_perm_bonuses?: string }).promo_perm_bonuses;
+                    if (!raw) return prev.promoPermanentBonuses || { luckBonus: 0, dropChanceBonus: 0 };
+                    const p = JSON.parse(raw);
+                    return {
+                      luckBonus: Math.max(prev.promoPermanentBonuses?.luckBonus || 0, Number(p.luckBonus) || 0),
+                      dropChanceBonus: Math.max(prev.promoPermanentBonuses?.dropChanceBonus || 0, Number(p.dropChanceBonus) || 0),
+                    };
+                  } catch {
+                    return prev.promoPermanentBonuses || { luckBonus: 0, dropChanceBonus: 0 };
+                  }
+                })(),
+                d1MineCounter: (supabaseData as unknown as { d1_mine_counter?: number }).d1_mine_counter ?? prev.d1MineCounter ?? 0,
+                pendingPromoMysteryCrates: (() => {
+                  try {
+                    const local = prev.pendingPromoMysteryCrates || [];
+                    const raw = (supabaseData as unknown as { pending_promo_crates?: string })
+                      .pending_promo_crates;
+                    if (!raw) return local;
+                    const arr = JSON.parse(raw);
+                    if (!Array.isArray(arr)) return local;
+                    const valid = new Set(['sketchy', 'suspicious', 'cursed']);
+                    const fromDb = arr.filter(
+                      (t: unknown): t is 'sketchy' | 'suspicious' | 'cursed' =>
+                        typeof t === 'string' && valid.has(t)
+                    );
+                    return fromDb.length >= local.length ? fromDb : local;
+                  } catch {
+                    return prev.pendingPromoMysteryCrates || [];
+                  }
+                })(),
                 // Keep whichever timestamp is newer (for future syncs)
                 // Keep whichever sync clock is newer so the next save doesn’t “lose” to a bogus 1970 local time
                 localUpdatedAt: Math.max(localTime, supabaseTime),
@@ -1323,6 +1386,11 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
             bonuses.minerSpeedBonus += (upgrade.effects.minerSpeedBonus || 0) + allB;
           }
         }
+
+        const progMiner = sumProgressiveUpgradeBonuses(prev.progressiveUpgrades);
+        bonuses.moneyBonus += progMiner.moneyBonus;
+        bonuses.minerDamageBonus += progMiner.minerDamageBonus;
+        bonuses.minerSpeedBonus += progMiner.minerSpeedBonus;
         
         // Check for active ability bonuses
         let abilityMinerSpeedBonus = 0;
@@ -1345,7 +1413,13 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         // Apply ALL bonuses: trinkets, prestige upgrades, and active abilities
         const totalDamageBonus = bonuses.minerDamageBonus + bonuses.minerSpeedBonus + abilityMinerSpeedBonus + abilityAllBonus;
         const totalMoneyBonus = bonuses.moneyBonus + abilityAllBonus;
-        const regularMinerDamage = Math.ceil(prev.minerCount * MINER_BASE_DAMAGE * (1 + totalDamageBonus));
+        let damageBonusForHit = totalDamageBonus;
+        let moneyBonusForEarn = totalMoneyBonus;
+        if (prev.hasD1PlayerPack && prev.currentPickaxeId === D1_PICKAXE_ID) {
+          damageBonusForHit *= 3;
+          moneyBonusForEarn *= 3;
+        }
+        const regularMinerDamage = Math.ceil(prev.minerCount * MINER_BASE_DAMAGE * (1 + damageBonusForHit));
         // Shadow miners deal 1000 damage per second each (Darkness path Wizard Tower)
         const shadowMinerDamage = prev.buildings.wizard_tower.shadowMiners * 1000;
         const damage = regularMinerDamage + shadowMinerDamage;
@@ -1376,7 +1450,10 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         const finalHP = fullRockHP - leftoverDamage;
         
         // Calculate total money earned (safeMoney prevents NaN/Infinity from multiplier stacking)
-        const moneyPerRock = safeMoney(rock.moneyPerBreak * prev.prestigeMultiplier * (1 + totalMoneyBonus));
+        let moneyPerRock = safeMoney(rock.moneyPerBreak * prev.prestigeMultiplier * (1 + moneyBonusForEarn));
+        if (prev.hasD1PlayerPack && prev.currentPickaxeId === D1_PICKAXE_ID) {
+          moneyPerRock = safeMoney(moneyPerRock * 2.5);
+        }
         const totalMoney = safeMoney(moneyPerRock * totalRocksBroken);
         
         // Check for rock upgrade
@@ -1470,6 +1547,13 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
             damageBonus += (upgrade.effects.minerDamageBonus || 0) + allB;
           }
         }
+
+        const progMine = sumProgressiveUpgradeBonuses(prev.progressiveUpgrades);
+        moneyBonus += progMine.moneyBonus;
+        damageBonus +=
+          progMine.minerDamageBonus +
+          progMine.minerSpeedBonus +
+          progMine.rockDamageBonus;
         
         // Temple bonuses (Light path)
         const templeRank = prev.buildings.temple.equippedRank;
@@ -1496,12 +1580,23 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
           moneyBonus = (1 + moneyBonus) * mineRitualMult - 1;
           damageBonus = (1 + damageBonus) * mineRitualMult - 1;
         }
+
+        if (prev.hasD1PlayerPack && prev.currentPickaxeId === D1_PICKAXE_ID) {
+          moneyBonus *= 3;
+          damageBonus *= 3;
+        }
         
         if (templeRank === 2 || templeRank === 3) {
           // Special mode: 20% of click money every 0.5s per mine
           const pickaxe = getPickaxeById(prev.currentPickaxeId);
-          const clickMoney = safeMoney(rock.moneyPerClick * prev.prestigeMultiplier * (1 + moneyBonus) * (1 + minePassiveAscEff.buildingBonus));
-          const passiveMoney = safeMoney(clickMoney * 0.20 * mineCount);
+          const pickMult = pickaxe?.moneyMultiplier ?? 1;
+          let clickMoney = safeMoney(
+            rock.moneyPerClick * prev.prestigeMultiplier * pickMult * (1 + moneyBonus) * (1 + minePassiveAscEff.buildingBonus)
+          );
+          let passiveMoney = safeMoney(clickMoney * 0.20 * mineCount);
+          if (prev.hasD1PlayerPack && prev.currentPickaxeId === D1_PICKAXE_ID) {
+            passiveMoney = safeMoney(passiveMoney * 2.5);
+          }
           
           return {
             ...prev,
@@ -1534,7 +1629,10 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
           const finalHP = fullRockHP - leftoverDamage;
           
           const moneyPerRock = safeMoney(rock.moneyPerBreak * prev.prestigeMultiplier * (1 + moneyBonus) * (1 + minePassiveAscEff.buildingBonus));
-          const totalMoney = safeMoney(moneyPerRock * totalRocksBroken);
+          let totalMoney = safeMoney(moneyPerRock * totalRocksBroken);
+          if (prev.hasD1PlayerPack && prev.currentPickaxeId === D1_PICKAXE_ID) {
+            totalMoney = safeMoney(totalMoney * 2.5);
+          }
           
           const highestUnlocked = getHighestUnlockedRock(newTotalClicks, prev.prestigeCount);
           const newCurrentRockId = highestUnlocked.id > prev.currentRockId ? highestUnlocked.id : prev.currentRockId;
@@ -1888,7 +1986,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
           currentRockId: 1,
           currentRockHP: getScaledRockHP(ROCKS[0].clicksToBreak, newPrestigeCount, prev.isHardMode, prev.sideLevel || 0),
           currentPickaxeId: 1,
-          ownedPickaxeIds: [1],
+          ownedPickaxeIds: prev.hasD1PlayerPack ? [1, D1_PICKAXE_ID] : [1],
           totalClicks: 0,
           minerCount: 0,
           yatesDollars: (isYates || ownsTotem) ? prev.yatesDollars : 0,
@@ -1972,7 +2070,9 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
 
     // Yates Totem overrides are final values — kept separate so trinketMultiplier doesn't inflate them
     let yatesOverride = { moneyBonus: 0, rockDamageBonus: 0, clickSpeedBonus: 0, couponBonus: 0, minerSpeedBonus: 0, minerDamageBonus: 0 };
-    
+    let yatesLuckFlat = 0;
+    let yatesDropFlat = 0;
+
     for (const itemId of gameState.equippedTrinketIds) {
       const isRelic = itemId.endsWith('_relic');
       const isTalisman = itemId.endsWith('_talisman');
@@ -1992,9 +2092,17 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         target.moneyBonus += ((e.moneyBonus || 0) + (e.allBonus || 0) + (e.minerMoneyBonus || 0)) * multiplier;
         target.rockDamageBonus += ((e.rockDamageBonus || 0) + (e.allBonus || 0)) * multiplier;
         target.clickSpeedBonus += ((e.clickSpeedBonus || 0) + (e.allBonus || 0)) * multiplier;
-        target.couponBonus += ((e.couponBonus || 0) + (e.couponLuckBonus || 0) + (e.allBonus || 0)) * multiplier;
+        target.couponBonus += ((e.couponBonus || 0) + (e.couponLuckBonus || 0) + (e.allBonus || 0) + (e.luckBonus || 0)) * multiplier;
         target.minerSpeedBonus += ((e.minerSpeedBonus || 0) + (e.allBonus || 0)) * multiplier;
         target.minerDamageBonus += ((e.minerDamageBonus || 0) + (e.allBonus || 0)) * multiplier;
+
+        if (specialEff3) {
+          yatesLuckFlat += (e.luckBonus || 0);
+          yatesDropFlat += (e.dropChanceBonus || 0);
+        } else {
+          bonuses.luckBonus += ((e.luckBonus || 0) * multiplier);
+          bonuses.dropChanceBonus += ((e.dropChanceBonus || 0) * multiplier);
+        }
       }
     }
     
@@ -2020,6 +2128,8 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     bonuses.couponBonus = bonuses.couponBonus * trinketMultiplier + yatesOverride.couponBonus;
     bonuses.minerSpeedBonus = bonuses.minerSpeedBonus * trinketMultiplier + yatesOverride.minerSpeedBonus;
     bonuses.minerDamageBonus = bonuses.minerDamageBonus * trinketMultiplier + yatesOverride.minerDamageBonus;
+    bonuses.luckBonus = bonuses.luckBonus * trinketMultiplier + yatesLuckFlat;
+    bonuses.dropChanceBonus = bonuses.dropChanceBonus * trinketMultiplier + yatesDropFlat;
     
     // Add bonuses from prestige upgrades (not multiplied by trinketBonus)
     for (const upgradeId of gameState.ownedPrestigeUpgradeIds) {
@@ -2040,6 +2150,13 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         }
       }
     }
+
+    const progTotals = sumProgressiveUpgradeBonuses(gameState.progressiveUpgrades);
+    bonuses.moneyBonus += progTotals.moneyBonus;
+    bonuses.rockDamageBonus += progTotals.rockDamageBonus;
+    bonuses.clickSpeedBonus += progTotals.clickSpeedBonus;
+    bonuses.minerSpeedBonus += progTotals.minerSpeedBonus;
+    bonuses.minerDamageBonus += progTotals.minerDamageBonus;
 
     // Add bonuses from equipped titles (Pro Player system)
     for (const titleId of (gameState.equippedTitleIds || [])) {
@@ -2175,13 +2292,31 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     if (ascBonuses.allDamageMultiplier > 1) bonuses.rockDamageBonus = (1 + bonuses.rockDamageBonus) * ascBonuses.allDamageMultiplier - 1;
     if (ascBonuses.allClickSpeedMultiplier > 1) bonuses.clickSpeedBonus = (1 + bonuses.clickSpeedBonus) * ascBonuses.allClickSpeedMultiplier - 1;
 
-    // Floor all stats at 0
+    const promoLuck = gameState.promoPermanentBonuses?.luckBonus || 0;
+    const promoDrop = gameState.promoPermanentBonuses?.dropChanceBonus || 0;
+    bonuses.couponBonus += promoLuck;
+    bonuses.luckBonus += promoLuck;
+    bonuses.dropChanceBonus += promoDrop;
+
+    if (gameState.hasD1PlayerPack && gameState.currentPickaxeId === D1_PICKAXE_ID) {
+      bonuses.moneyBonus *= 3;
+      bonuses.rockDamageBonus *= 3;
+      bonuses.clickSpeedBonus *= 3;
+      bonuses.couponBonus *= 3;
+      bonuses.minerSpeedBonus *= 3;
+      bonuses.minerDamageBonus *= 3;
+      bonuses.luckBonus *= 3;
+      bonuses.dropChanceBonus *= 3;
+    }
+
+    // Floor non-luck stats at 0 (luck/drops may be negative from Void Pact)
     for (const key of Object.keys(bonuses) as (keyof typeof bonuses)[]) {
+      if (key === 'luckBonus' || key === 'dropChanceBonus') continue;
       if (bonuses[key] < 0) bonuses[key] = 0;
     }
     
     return bonuses;
-  }, [gameState.equippedTrinketIds, gameState.ownedPrestigeUpgradeIds, gameState.equippedTitleIds, gameState.chosenPath, gameState.sacrificeBuff, gameState.buildings.temple.equippedRank, gameState.buildings.wizard_tower.ritualActive, gameState.buildings.wizard_tower.ritualEndTime, gameState.ownedPremiumProductIds, gameState.shadySamSwaps, gameState.sideLevelBuffs, gameState.ownedAscensionNodeIds]);
+  }, [gameState.equippedTrinketIds, gameState.ownedPrestigeUpgradeIds, gameState.equippedTitleIds, gameState.chosenPath, gameState.sacrificeBuff, gameState.buildings.temple.equippedRank, gameState.buildings.wizard_tower.ritualActive, gameState.buildings.wizard_tower.ritualEndTime, gameState.ownedPremiumProductIds, gameState.shadySamSwaps, gameState.sideLevelBuffs, gameState.ownedAscensionNodeIds, gameState.promoPermanentBonuses, gameState.hasD1PlayerPack, gameState.currentPickaxeId, gameState.progressiveUpgrades]);
 
   // Track dirty state for throttled localStorage saves
   const localSaveDirtyRef = useRef(false);
@@ -2312,6 +2447,11 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
           lottery_tickets: gameState.lotteryTickets,
           // Shady Sam
           shady_sam_swaps: JSON.stringify(gameState.shadySamSwaps),
+          redeemed_codes: JSON.stringify(gameState.redeemedPromoCodes || []),
+          has_d1_player_pack: gameState.hasD1PlayerPack || false,
+          promo_perm_bonuses: JSON.stringify(gameState.promoPermanentBonuses || { luckBonus: 0, dropChanceBonus: 0 }),
+          d1_mine_counter: gameState.d1MineCounter ?? 0,
+          pending_promo_crates: JSON.stringify(gameState.pendingPromoMysteryCrates || []),
         }, gameState.isHardMode);
       }
     } catch (err) {
@@ -2386,6 +2526,11 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     heavenly_chips: state.heavenlyChips || 0,
     total_hc_earned: state.totalHCEarned || 0,
     owned_ascension_node_ids: state.ownedAscensionNodeIds || [],
+    redeemed_codes: JSON.stringify(state.redeemedPromoCodes || []),
+    has_d1_player_pack: state.hasD1PlayerPack || false,
+    promo_perm_bonuses: JSON.stringify(state.promoPermanentBonuses || { luckBonus: 0, dropChanceBonus: 0 }),
+    d1_mine_counter: state.d1MineCounter ?? 0,
+    pending_promo_crates: JSON.stringify(state.pendingPromoMysteryCrates || []),
   });
 
   const saveNow = useCallback(async (): Promise<boolean> => {
@@ -2632,7 +2777,9 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       let couponBonus = 0;
       let clickSpeedBonus = 0;
       let yOvRock = 0, yOvMoney = 0, yOvCoupon = 0, yOvClick = 0;
-      
+      let yOvDrop = 0;
+      let trinketDropChance = 0;
+
       for (const itemId of prev.equippedTrinketIds) {
         const isRelic = itemId.endsWith('_relic');
         const isTalisman = itemId.endsWith('_talisman');
@@ -2646,13 +2793,15 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
           if (specialEff4) {
             yOvRock += ((e.rockDamageBonus || 0) + (e.allBonus || 0)) * multiplier;
             yOvMoney += ((e.moneyBonus || 0) + (e.allBonus || 0) + (e.minerMoneyBonus || 0)) * multiplier;
-            yOvCoupon += ((e.couponBonus || 0) + (e.couponLuckBonus || 0) + (e.allBonus || 0)) * multiplier;
+            yOvCoupon += ((e.couponBonus || 0) + (e.couponLuckBonus || 0) + (e.allBonus || 0) + (e.luckBonus || 0)) * multiplier;
             yOvClick += ((e.clickSpeedBonus || 0) + (e.allBonus || 0)) * multiplier;
+            yOvDrop += (e.dropChanceBonus || 0);
           } else {
             rockDamageBonus += ((e.rockDamageBonus || 0) + (e.allBonus || 0)) * multiplier;
             moneyBonus += ((e.moneyBonus || 0) + (e.allBonus || 0) + (e.minerMoneyBonus || 0)) * multiplier;
-            couponBonus += ((e.couponBonus || 0) + (e.couponLuckBonus || 0) + (e.allBonus || 0)) * multiplier;
+            couponBonus += ((e.couponBonus || 0) + (e.couponLuckBonus || 0) + (e.allBonus || 0) + (e.luckBonus || 0)) * multiplier;
             clickSpeedBonus += ((e.clickSpeedBonus || 0) + (e.allBonus || 0)) * multiplier;
+            trinketDropChance += ((e.dropChanceBonus || 0) * multiplier);
           }
         }
       }
@@ -2669,6 +2818,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       moneyBonus = moneyBonus * trinketMultiplier + yOvMoney;
       couponBonus = couponBonus * trinketMultiplier + yOvCoupon;
       clickSpeedBonus = clickSpeedBonus * trinketMultiplier + yOvClick;
+      const trinketDropTotal = trinketDropChance * trinketMultiplier + yOvDrop;
       
       // Prestige upgrade bonuses (not multiplied by trinketBonus)
       for (const upgradeId of prev.ownedPrestigeUpgradeIds) {
@@ -2684,6 +2834,11 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
           if (luckPts) couponBonus += luckPts;
         }
       }
+
+      const progClick = sumProgressiveUpgradeBonuses(prev.progressiveUpgrades);
+      rockDamageBonus += progClick.rockDamageBonus;
+      moneyBonus += progClick.moneyBonus;
+      clickSpeedBonus += progClick.clickSpeedBonus;
       
       // Title bonuses
       for (const titleId of (prev.equippedTitleIds || [])) {
@@ -2706,6 +2861,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       rockDamageBonus += ascEff.damageBonus;
       clickSpeedBonus += ascEff.clickSpeedBonus;
       couponBonus += ascEff.luckBonus;
+      couponBonus += prev.promoPermanentBonuses?.luckBonus || 0;
       if (ascEff.allMoneyMultiplier > 1) moneyBonus = (1 + moneyBonus) * ascEff.allMoneyMultiplier - 1;
       if (ascEff.allDamageMultiplier > 1) rockDamageBonus = (1 + rockDamageBonus) * ascEff.allDamageMultiplier - 1;
       if (ascEff.allClickSpeedMultiplier > 1) clickSpeedBonus = (1 + clickSpeedBonus) * ascEff.allClickSpeedMultiplier - 1;
@@ -2746,6 +2902,14 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         rockDamageBonus = (1 + rockDamageBonus) * 3 - 1;
         clickSpeedBonus = (1 + clickSpeedBonus) * 3 - 1;
         couponBonus = (1 + couponBonus) * 3 - 1;
+      }
+
+      // D1 Player Pack: ×3 core click bonuses while D1 is equipped (after other multipliers).
+      if (prev.hasD1PlayerPack && prev.currentPickaxeId === D1_PICKAXE_ID) {
+        moneyBonus *= 3;
+        rockDamageBonus *= 3;
+        clickSpeedBonus *= 3;
+        couponBonus *= 3;
       }
       
       // Active ability bonuses
@@ -2793,8 +2957,18 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         templeCurseMoneyPenalty *= 0.9; // Additional 10% less money
       }
 
-      // Calculate click power (clickSpeedBonus multiplies damage: 50% = 1.5x, 100% = 2x)
-      let clickPower = pickaxe.clickPower;
+      // D1 ARISE: base damage = max(2M, 4× strongest other owned pickaxe click power).
+      let basePcxPower = pickaxe.clickPower;
+      if (prev.hasD1PlayerPack && prev.currentPickaxeId === D1_PICKAXE_ID) {
+        const strongestOwned = Math.max(
+          0,
+          ...prev.ownedPickaxeIds
+            .filter((id) => id !== D1_PICKAXE_ID)
+            .map((id) => getPickaxeById(id)?.clickPower ?? 0),
+        );
+        basePcxPower = Math.max(2_000_000, strongestOwned * 4);
+      }
+      let clickPower = basePcxPower;
       clickPower = Math.ceil(clickPower * (1 + rockDamageBonus + allBonus) * damageMultiplier * (1 + clickSpeedBonus) * wizardRitualMultiplier * factoryDamageMultiplier * factorySpeedMultiplier);
 
       // Hard Mode: 15% less pickaxe damage
@@ -2862,6 +3036,11 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         earnedMoney *= caffeineMult; // Caffeine: 5x boost or 0.5x crash
       }
       earnedMoney = safeMoney(earnedMoney);
+
+      // D1 Player Pack: ×2.5 money from this click (after pickaxe + prestige stack).
+      if (prev.hasD1PlayerPack && prev.currentPickaxeId === D1_PICKAXE_ID) {
+        earnedMoney = safeMoney(earnedMoney * 2.5);
+      }
       
       // Wandering Trader money tax (if deal is active)
       if (prev.wtMoneyTax > 0) {
@@ -2873,6 +3052,23 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       let newRockHP = newHP;
       let newRocksMinedCount = prev.rocksMinedCount;
       let newCurrentRockId = prev.currentRockId;
+
+      // D1 pack: every 5 mine clicks while D1 is equipped → +1 random progressive (shop) upgrade level.
+      let d1MineCounter = prev.d1MineCounter || 0;
+      let progressiveUpgrades = prev.progressiveUpgrades;
+      if (prev.hasD1PlayerPack && prev.currentPickaxeId === D1_PICKAXE_ID) {
+        d1MineCounter += 1;
+        if (d1MineCounter >= 5) {
+          d1MineCounter = 0;
+          const ids = PROGRESSIVE_UPGRADES.map((u) => u.id);
+          const pick = ids[Math.floor(Math.random() * ids.length)] as ProgressiveUpgradeType;
+          const def = PROGRESSIVE_UPGRADES.find((u) => u.id === pick)!;
+          progressiveUpgrades = {
+            ...prev.progressiveUpgrades,
+            [pick]: Math.min(def.maxLevel, prev.progressiveUpgrades[pick] + 1),
+          };
+        }
+      }
 
       // Check if rock broke
       if (willBreak) {
@@ -2899,7 +3095,16 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       let newLotteryTickets = prev.lotteryTickets;
       if (meetsRequirements) {
         const luckBonus = (pickaxe.couponLuckBonus || 0) + couponBonus;
-        const dropAscFactor = 1 + Math.min(200, ascEff.dropChanceBonus) / 100;
+        const dropCombined = Math.max(
+          -90,
+          Math.min(
+            200,
+            ascEff.dropChanceBonus +
+              trinketDropTotal +
+              (prev.promoPermanentBonuses?.dropChanceBonus || 0)
+          )
+        );
+        const dropAscFactor = 1 + dropCombined / 100;
         const rand = Math.random();
         
         if (rand < COUPON_DROP_RATES.discount100 * (1 + luckBonus) * dropAscFactor) {
@@ -2924,6 +3129,8 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         rocksMinedCount: newRocksMinedCount,
         coupons: newCoupons,
         lotteryTickets: newLotteryTickets,
+        d1MineCounter,
+        progressiveUpgrades,
       };
     });
 
@@ -2933,9 +3140,9 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
   const canAffordPickaxe = useCallback((pickaxeId: number) => {
     const pickaxe = getPickaxeById(pickaxeId);
     if (!pickaxe) return false;
-    const scaledPrice = Math.floor(pickaxe.price * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0));
+    const scaledPrice = Math.floor(pickaxe.price * getPurchasePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0, gameState.equippedTrinketIds));
     return gameState.yatesDollars >= scaledPrice;
-  }, [gameState.yatesDollars, gameState.prestigeCount, gameState.isHardMode]);
+  }, [gameState.yatesDollars, gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel, gameState.equippedTrinketIds]);
 
   const ownsPickaxe = useCallback((pickaxeId: number) => {
     return gameState.ownedPickaxeIds.includes(pickaxeId);
@@ -2944,8 +3151,9 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
   const buyPickaxe = useCallback((pickaxeId: number) => {
     const pickaxe = getPickaxeById(pickaxeId);
     if (!pickaxe) return false;
+    if (pickaxeId === D1_PICKAXE_ID) return false;
     if (gameState.ownedPickaxeIds.includes(pickaxeId)) return false;
-    const scaledPrice = Math.floor(pickaxe.price * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0));
+    const scaledPrice = Math.floor(pickaxe.price * getPurchasePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0, gameState.equippedTrinketIds));
     if (gameState.yatesDollars < scaledPrice) return false;
 
     window._clickTimestamps = [];
@@ -2961,16 +3169,16 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     }));
 
     return true;
-  }, [gameState.ownedPickaxeIds, gameState.yatesDollars, gameState.prestigeCount]);
+  }, [gameState.ownedPickaxeIds, gameState.yatesDollars, gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel, gameState.equippedTrinketIds]);
 
   const buyAllAffordablePickaxes = useCallback((): number => {
     let bought = 0;
     setGameState(prev => {
       let money = prev.yatesDollars;
       const owned = new Set(prev.ownedPickaxeIds);
-      const priceMultiplier = getPrestigePriceMultiplier(prev.prestigeCount, prev.isHardMode, prev.sideLevel || 0);
+      const priceMultiplier = getPurchasePriceMultiplier(prev.prestigeCount, prev.isHardMode, prev.sideLevel || 0, prev.equippedTrinketIds);
 
-      const skippedIds = new Set<number>();
+      const skippedIds = new Set<number>([...NON_PROGRESSION_PICKAXE_IDS]);
       if (prev.chosenPath === 'darkness') {
         LIGHT_PICKAXE_IDS.forEach(id => skippedIds.add(id));
       } else if (prev.chosenPath === 'light') {
@@ -3141,7 +3349,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
 
   const buyAutoclicker = useCallback(() => {
     if (gameState.hasAutoclicker) return false;
-    const scaledCost = Math.floor(AUTOCLICKER_COST * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0));
+    const scaledCost = Math.floor(AUTOCLICKER_COST * getPurchasePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0, gameState.equippedTrinketIds));
     if (gameState.yatesDollars < scaledCost) return false;
 
     setGameState((prev) => ({
@@ -3152,7 +3360,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     }));
 
     return true;
-  }, [gameState.hasAutoclicker, gameState.yatesDollars, gameState.prestigeCount]);
+  }, [gameState.hasAutoclicker, gameState.yatesDollars, gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel, gameState.equippedTrinketIds]);
 
   const toggleAutoclicker = useCallback(() => {
     if (!gameState.hasAutoclicker) return;
@@ -3320,7 +3528,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         currentRockId: 1,
         currentRockHP: getScaledRockHP(ROCKS[0].clicksToBreak, newPrestigeCount, prev.isHardMode, prev.sideLevel || 0),
         currentPickaxeId: 1,
-        ownedPickaxeIds: [1],
+        ownedPickaxeIds: prev.hasD1PlayerPack ? [1, D1_PICKAXE_ID] : [1],
         totalClicks: 0,
         // Reset miners
         minerCount: 0,
@@ -3368,7 +3576,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         current_rock_id: 1,
         current_rock_hp: rock.clicksToBreak,
         rocks_mined_count: 0,
-        owned_pickaxe_ids: [1],
+        owned_pickaxe_ids: gameState.hasD1PlayerPack ? [1, D1_PICKAXE_ID] : [1],
         miner_count: 0,
         prestige_count: newPrestigeCount,
         prestige_multiplier: newMultiplier,
@@ -3514,7 +3722,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     const trinket = TRINKETS.find(t => t.id === trinketId);
     if (!trinket) return false;
     if (gameState.ownedTrinketIds.includes(trinketId)) return false;
-    const scaledCost = Math.floor(trinket.cost * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0));
+    const scaledCost = Math.floor(trinket.cost * getPurchasePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0, gameState.equippedTrinketIds));
     if (gameState.yatesDollars < scaledCost) return false;
     
     setGameState(prev => ({
@@ -3528,7 +3736,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       }));
 
       return true;
-  }, [gameState.ownedTrinketIds, gameState.yatesDollars, gameState.prestigeCount]);
+  }, [gameState.ownedTrinketIds, gameState.yatesDollars, gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel, gameState.equippedTrinketIds]);
   
   const canEquipDualTrinkets = useCallback(() => {
     return gameState.ownedPrestigeUpgradeIds.includes('dual_trinkets');
@@ -3600,196 +3808,250 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     return calculateTotalBonuses();
   }, [calculateTotalBonuses]);
 
-  // Detailed bonus breakdown — returns per-source contributions for each stat
+  // Detailed bonus breakdown — same pipeline order as calculateTotalBonuses (additive +%, then × steps).
   type BonusStat = 'moneyBonus' | 'rockDamageBonus' | 'clickSpeedBonus' | 'couponBonus' | 'minerSpeedBonus' | 'minerDamageBonus' | 'luckBonus' | 'dropChanceBonus';
-  const getBonusBreakdown = useCallback((stat: BonusStat): { source: string; value: number }[] => {
-    const sources: { source: string; value: number }[] = [];
+  const getBonusBreakdown = useCallback(
+    (stat: BonusStat): BonusBreakdownEntry[] => {
+      const ascBonuses = sumAscensionEffects(gameState.ownedAscensionNodeIds || []);
 
-    // Trinkets
-    for (const itemId of gameState.equippedTrinketIds) {
-      const isRelic = itemId.endsWith('_relic');
-      const isTalisman = itemId.endsWith('_talisman');
-      const baseId = isRelic ? itemId.replace('_relic', '') : isTalisman ? itemId.replace('_talisman', '') : itemId;
-      const trinket = TRINKETS.find(t => t.id === baseId);
-      if (!trinket) continue;
-      const specialEff5 = getSpecialTrinketOverride(baseId, isRelic, isTalisman);
-      const e = specialEff5 || trinket.effects;
-      const multiplier = specialEff5 ? 1 : (isRelic ? RELIC_MULTIPLIERS[trinket.rarity] || 1 : isTalisman ? TALISMAN_MULTIPLIERS[trinket.rarity] || 1 : 1);
-      const statMap: Record<BonusStat, number> = {
-        moneyBonus: ((e.moneyBonus || 0) + (e.allBonus || 0) + (e.minerMoneyBonus || 0)) * multiplier,
-        rockDamageBonus: ((e.rockDamageBonus || 0) + (e.allBonus || 0)) * multiplier,
-        clickSpeedBonus: ((e.clickSpeedBonus || 0) + (e.allBonus || 0)) * multiplier,
-        couponBonus: ((e.couponBonus || 0) + (e.couponLuckBonus || 0) + (e.allBonus || 0)) * multiplier,
-        minerSpeedBonus: ((e.minerSpeedBonus || 0) + (e.allBonus || 0)) * multiplier,
-        minerDamageBonus: ((e.minerDamageBonus || 0) + (e.allBonus || 0)) * multiplier,
-        luckBonus: 0,
-        dropChanceBonus: 0,
-      };
-      const val = statMap[stat];
-      if (val > 0) {
-        const suffix = isRelic ? ' (Relic)' : isTalisman ? ' (Talisman)' : '';
-        sources.push({ source: `🔮 ${trinket.name}${suffix}`, value: val });
+      let trinketMultiplier = 1.0;
+      for (const upgradeId of gameState.ownedPrestigeUpgradeIds) {
+        const upgrade = PRESTIGE_UPGRADES.find((u) => u.id === upgradeId);
+        if (upgrade?.effects.trinketBonus) trinketMultiplier += upgrade.effects.trinketBonus;
       }
-    }
+      trinketMultiplier += ascBonuses.trinketBonus;
+      if (gameState.chosenPath === 'light') trinketMultiplier += 0.5;
 
-    // Prestige upgrades
-    for (const upgradeId of gameState.ownedPrestigeUpgradeIds) {
-      const upgrade = PRESTIGE_UPGRADES.find(u => u.id === upgradeId);
-      if (!upgrade) continue;
-      const e = upgrade.effects;
-      const allB = e.allBonus || 0;
-      const luckPts = (e.luckBonus || 0) + allB;
-      const statMap: Record<BonusStat, number> = {
-        moneyBonus: (e.moneyBonus || 0) + allB,
-        rockDamageBonus: (e.rockDamageBonus || 0) + allB,
-        clickSpeedBonus: (e.clickSpeedBonus || 0) + allB,
-        couponBonus: (e.couponBonus || 0) + allB + (e.luckBonus || 0),
-        minerSpeedBonus: (e.minerSpeedBonus || 0) + allB,
-        minerDamageBonus: (e.minerDamageBonus || 0) + allB,
-        luckBonus: luckPts,
-        dropChanceBonus: 0,
+      const nonSpecRaw = getNonSpecialEquippedTrinketBonusRaw(gameState.equippedTrinketIds);
+      const entries: BonusBreakdownEntry[] = [];
+
+      const pushAdd = (source: string, value: number) => {
+        if (value === 0) return;
+        entries.push({ source, value, kind: 'additive' });
       };
-      if (statMap[stat] > 0) sources.push({ source: `⭐ ${upgrade.name}`, value: statMap[stat] });
-    }
-
-    // Titles
-    for (const titleId of (gameState.equippedTitleIds || [])) {
-      const title = TITLES.find(t => t.id === titleId);
-      if (!title) continue;
-      const allB = title.buffs.allBonus || 0;
-      const speedB = title.buffs.speedBonus || 0;
-      const statMap: Record<BonusStat, number> = {
-        moneyBonus: (title.buffs.moneyBonus || 0) + allB,
-        rockDamageBonus: allB,
-        clickSpeedBonus: allB + speedB,
-        couponBonus: allB,
-        minerSpeedBonus: allB + speedB,
-        minerDamageBonus: allB,
-        luckBonus: 0,
-        dropChanceBonus: 0,
+      const pushMult = (source: string, multiplier: number) => {
+        if (multiplier === 1) return;
+        entries.push({ source, value: 0, kind: 'multiplier', multiplier });
       };
-      if (statMap[stat] > 0) sources.push({ source: `👑 ${title.name}`, value: statMap[stat] });
-    }
-
-    // Light path bonus
-    if (gameState.chosenPath === 'light' && stat === 'moneyBonus') {
-      sources.push({ source: '☀️ Light Path', value: 0.30 });
-    }
-
-    // Temple
-    const templeRank = gameState.buildings.temple.equippedRank;
-    if (templeRank && gameState.chosenPath === 'light') {
-      const templeValues: Record<number, Record<string, number>> = {
-        1: { moneyBonus: 0.27, rockDamageBonus: 0.36 },
-        2: { moneyBonus: 0.55, rockDamageBonus: 0.73 },
-        3: { moneyBonus: 0.90, rockDamageBonus: 1.20 },
+      const pushBonusFieldScale = (source: string, scale: number) => {
+        if (scale === 1) return;
+        entries.push({ source, value: 0, kind: 'bonus_field_scale', multiplier: scale });
       };
-      const tv = templeValues[templeRank];
-      if (tv && tv[stat]) sources.push({ source: `⛪ Temple Rank ${templeRank}`, value: tv[stat] });
-    }
 
-    // Sacrifice buff
-    if (gameState.sacrificeBuff && Date.now() < gameState.sacrificeBuff.endsAt) {
-      const b = gameState.sacrificeBuff;
-      const statMap: Record<BonusStat, number> = {
-        moneyBonus: (b.moneyBonus || 0) + (b.allBonus || 0),
-        rockDamageBonus: (b.pcxDamageBonus || 0) + (b.allBonus || 0),
-        clickSpeedBonus: b.allBonus || 0,
-        couponBonus: b.allBonus || 0,
-        minerSpeedBonus: b.allBonus || 0,
-        minerDamageBonus: (b.minerDamageBonus || 0) + (b.allBonus || 0),
-        luckBonus: 0,
-        dropChanceBonus: 0,
-      };
-      if (statMap[stat] > 0) sources.push({ source: '🩸 Sacrifice', value: statMap[stat] });
-    }
-
-    // Active buffs
-    for (const buff of gameState.activeBuffs) {
-      if (Date.now() > buff.startTime + buff.duration) continue;
-      if (buff.type === stat.replace('Bonus', '') || buff.type === 'allStats') {
-        sources.push({ source: `✨ ${buff.name}`, value: buff.multiplier });
+      for (const itemId of gameState.equippedTrinketIds) {
+        const isRelic = itemId.endsWith('_relic');
+        const isTalisman = itemId.endsWith('_talisman');
+        const baseId = isRelic ? itemId.replace('_relic', '') : isTalisman ? itemId.replace('_talisman', '') : itemId;
+        const trinket = TRINKETS.find((t) => t.id === baseId);
+        if (!trinket) continue;
+        const specialEff = getSpecialTrinketOverride(baseId, isRelic, isTalisman);
+        const e = specialEff || trinket.effects;
+        const mult = specialEff ? 1 : isRelic ? RELIC_MULTIPLIERS[trinket.rarity] || 1 : isTalisman ? TALISMAN_MULTIPLIERS[trinket.rarity] || 1 : 1;
+        const luckFromTrinket = (e.luckBonus || 0) * mult;
+        const dropFromTrinket = (e.dropChanceBonus || 0) * mult;
+        const statMap: Record<BonusStat, number> = {
+          moneyBonus: ((e.moneyBonus || 0) + (e.allBonus || 0) + (e.minerMoneyBonus || 0)) * mult,
+          rockDamageBonus: ((e.rockDamageBonus || 0) + (e.allBonus || 0)) * mult,
+          clickSpeedBonus: ((e.clickSpeedBonus || 0) + (e.allBonus || 0)) * mult,
+          couponBonus: ((e.couponBonus || 0) + (e.couponLuckBonus || 0) + (e.allBonus || 0) + (e.luckBonus || 0)) * mult,
+          minerSpeedBonus: ((e.minerSpeedBonus || 0) + (e.allBonus || 0)) * mult,
+          minerDamageBonus: ((e.minerDamageBonus || 0) + (e.allBonus || 0)) * mult,
+          luckBonus: luckFromTrinket,
+          dropChanceBonus: dropFromTrinket,
+        };
+        const val = statMap[stat];
+        if (val !== 0) {
+          const suffix = isRelic ? ' (Relic)' : isTalisman ? ' (Talisman)' : '';
+          pushAdd(`🔮 ${trinket.name}${suffix}`, val);
+        }
       }
-    }
 
-    // Premium products
-    for (const productId of gameState.ownedPremiumProductIds) {
-      const buff = PREMIUM_PRODUCT_BUFFS[productId];
-      if (!buff) continue;
-      const statMap: Record<BonusStat, number> = {
-        moneyBonus: buff.moneyMultiplier ? buff.moneyMultiplier - 1 : 0,
-        rockDamageBonus: 0,
-        clickSpeedBonus: buff.clickSpeedBonus || 0,
-        couponBonus: 0,
-        minerSpeedBonus: buff.minerSpeedBonus || 0,
-        minerDamageBonus: 0,
-        luckBonus: 0,
-        dropChanceBonus: 0,
-      };
-      if (statMap[stat] > 0) sources.push({ source: `💎 ${buff.name}`, value: statMap[stat] });
-    }
+      const synergyExtra = nonSpecRaw[stat] * (trinketMultiplier - 1);
+      if (synergyExtra !== 0) {
+        pushAdd(
+          `⚡ Trinket synergy (extra from ×${trinketMultiplier.toFixed(2)} on non-override trinket totals; Light + prestige + ascension trinket path)`,
+          synergyExtra,
+        );
+      }
 
-    // Wandering Trader permanent buffs
-    const wt = gameState.wanderingTraderPermBuffs;
-    if (wt) {
-      const statMap: Record<BonusStat, number> = {
-        moneyBonus: wt.moneyBonus || 0,
-        rockDamageBonus: 0,
-        clickSpeedBonus: 0,
-        couponBonus: wt.couponLuckBonus || 0,
-        minerSpeedBonus: wt.minerSpeedBonus || 0,
-        minerDamageBonus: wt.minerDamageBonus || 0,
-        luckBonus: 0,
-        dropChanceBonus: 0,
-      };
-      if (statMap[stat] > 0) sources.push({ source: '🧳 Wandering Trader', value: statMap[stat] });
-    }
+      for (const upgradeId of gameState.ownedPrestigeUpgradeIds) {
+        const upgrade = PRESTIGE_UPGRADES.find((u) => u.id === upgradeId);
+        if (!upgrade) continue;
+        const e = upgrade.effects;
+        const allB = e.allBonus || 0;
+        const luckPts = (e.luckBonus || 0) + allB;
+        const statMap: Record<BonusStat, number> = {
+          moneyBonus: (e.moneyBonus || 0) + allB,
+          rockDamageBonus: (e.rockDamageBonus || 0) + allB,
+          clickSpeedBonus: (e.clickSpeedBonus || 0) + allB,
+          couponBonus: (e.couponBonus || 0) + allB + (e.luckBonus || 0),
+          minerSpeedBonus: (e.minerSpeedBonus || 0) + allB,
+          minerDamageBonus: (e.minerDamageBonus || 0) + allB,
+          luckBonus: luckPts,
+          dropChanceBonus: 0,
+        };
+        if (statMap[stat] !== 0) pushAdd(`⭐ ${upgrade.name}`, statMap[stat]);
+      }
 
-    // Side level buffs
-    if (gameState.sideLevelBuffs?.[stat]) {
-      sources.push({ source: `📊 Side Lv.${gameState.sideLevel}`, value: gameState.sideLevelBuffs[stat] });
-    }
+      for (const pu of PROGRESSIVE_UPGRADES) {
+        const lv = gameState.progressiveUpgrades?.[pu.id] ?? 0;
+        const b = getProgressiveUpgradeBonus(pu, lv);
+        if (b === 0) continue;
+        switch (pu.id) {
+          case 'pcxDamage':
+            if (stat === 'rockDamageBonus') pushAdd(`📈 ${pu.name} (Shop)`, b);
+            break;
+          case 'money':
+            if (stat === 'moneyBonus') pushAdd(`📈 ${pu.name} (Shop)`, b);
+            break;
+          case 'generalSpeed':
+            if (stat === 'clickSpeedBonus' || stat === 'minerSpeedBonus') pushAdd(`📈 ${pu.name} (Shop)`, b);
+            break;
+          case 'minerSpeed':
+            if (stat === 'minerSpeedBonus') pushAdd(`📈 ${pu.name} (Shop)`, b);
+            break;
+          case 'minerDamage':
+            if (stat === 'minerDamageBonus') pushAdd(`📈 ${pu.name} (Shop)`, b);
+            break;
+        }
+      }
 
-    // Ascension (Heavenly upgrades)
-    for (const nodeId of gameState.ownedAscensionNodeIds || []) {
-      const node = ASCENSION_NODES.find(n => n.id === nodeId);
-      if (!node) continue;
-      const e = node.effects;
-      if (stat === 'moneyBonus') {
-        if (e.moneyBonus) sources.push({ source: `🌟 ${node.name}`, value: e.moneyBonus });
-        if (e.allMoneyMultiplier && e.allMoneyMultiplier > 1) sources.push({ source: `🌟 ${node.name} (×${e.allMoneyMultiplier} all money)`, value: e.allMoneyMultiplier - 1 });
+      for (const titleId of gameState.equippedTitleIds || []) {
+        const title = TITLES.find((t) => t.id === titleId);
+        if (!title) continue;
+        const allB = title.buffs.allBonus || 0;
+        const speedB = title.buffs.speedBonus || 0;
+        const statMap: Record<BonusStat, number> = {
+          moneyBonus: (title.buffs.moneyBonus || 0) + allB,
+          rockDamageBonus: allB,
+          clickSpeedBonus: allB + speedB,
+          couponBonus: allB,
+          minerSpeedBonus: allB + speedB,
+          minerDamageBonus: allB,
+          luckBonus: 0,
+          dropChanceBonus: 0,
+        };
+        if (statMap[stat] !== 0) pushAdd(`👑 ${title.name}`, statMap[stat]);
       }
-      if (stat === 'rockDamageBonus') {
-        if (e.damageBonus) sources.push({ source: `🌟 ${node.name}`, value: e.damageBonus });
-        if (e.allDamageMultiplier && e.allDamageMultiplier > 1) sources.push({ source: `🌟 ${node.name} (×${e.allDamageMultiplier} all damage)`, value: e.allDamageMultiplier - 1 });
-      }
-      if (stat === 'clickSpeedBonus') {
-        if (e.clickSpeedBonus) sources.push({ source: `🌟 ${node.name}`, value: e.clickSpeedBonus });
-        if (e.allClickSpeedMultiplier && e.allClickSpeedMultiplier > 1) sources.push({ source: `🌟 ${node.name} (×${e.allClickSpeedMultiplier} all click speed)`, value: e.allClickSpeedMultiplier - 1 });
-      }
-      if (stat === 'couponBonus') {
-        if (e.luckBonus) sources.push({ source: `🌟 ${node.name} (luck)`, value: e.luckBonus });
-      }
-      if (stat === 'luckBonus') {
-        if (e.luckBonus) sources.push({ source: `🌟 ${node.name}`, value: e.luckBonus });
-      }
-      if (stat === 'dropChanceBonus') {
-        if (e.dropChanceBonus) sources.push({ source: `🌟 ${node.name}`, value: e.dropChanceBonus });
-      }
-    }
 
-    // Shady Sam swaps
-    for (const swap of (gameState.shadySamSwaps || [])) {
-      const samMap: Record<string, BonusStat> = {
-        couponLuck: 'couponBonus', minerSpeed: 'minerSpeedBonus', clickDamage: 'clickSpeedBonus',
-        pcxDamage: 'rockDamageBonus', moneyMultiplier: 'moneyBonus', minerDamage: 'minerDamageBonus',
-      };
-      if (samMap[swap.buffStat] === stat) sources.push({ source: '🎭 Sam Swap (+)', value: swap.amount });
-      if (samMap[swap.debuffStat] === stat) sources.push({ source: '🎭 Sam Swap (-)', value: -swap.amount });
-    }
+      if (gameState.chosenPath === 'light' && stat === 'moneyBonus') {
+        pushAdd('☀️ Light path', 0.3);
+      }
 
-    return sources.filter(s => s.value !== 0);
-  }, [gameState]);
+      if (gameState.sacrificeBuff && Date.now() < gameState.sacrificeBuff.endsAt) {
+        const b = gameState.sacrificeBuff;
+        const statMap: Record<BonusStat, number> = {
+          moneyBonus: (b.moneyBonus || 0) + (b.allBonus || 0),
+          rockDamageBonus: (b.pcxDamageBonus || 0) + (b.allBonus || 0),
+          clickSpeedBonus: b.allBonus || 0,
+          couponBonus: b.allBonus || 0,
+          minerSpeedBonus: b.allBonus || 0,
+          minerDamageBonus: (b.minerDamageBonus || 0) + (b.allBonus || 0),
+          luckBonus: 0,
+          dropChanceBonus: 0,
+        };
+        if (statMap[stat] !== 0) pushAdd('🩸 Sacrifice', statMap[stat]);
+      }
+
+      const templeRank = gameState.buildings.temple.equippedRank;
+      if (templeRank && gameState.chosenPath === 'light') {
+        const templeValues: Record<number, Partial<Record<BonusStat, number>>> = {
+          1: { moneyBonus: 0.27, rockDamageBonus: 0.36 },
+          2: { moneyBonus: 0.55, rockDamageBonus: 0.73 },
+          3: { moneyBonus: 0.9, rockDamageBonus: 1.2 },
+        };
+        const tv = templeValues[templeRank]?.[stat];
+        if (tv) pushAdd(`⛪ Temple rank ${templeRank}`, tv);
+      }
+
+      const ritualActive =
+        gameState.buildings.wizard_tower.ritualActive &&
+        gameState.buildings.wizard_tower.ritualEndTime &&
+        Date.now() < gameState.buildings.wizard_tower.ritualEndTime;
+      if (ritualActive && stat !== 'luckBonus' && stat !== 'dropChanceBonus') {
+        const ritualMult = 3.0 + ascBonuses.wizardPowerBonus;
+        pushMult(`🔮 Wizard ritual (×${ritualMult.toFixed(2)} on 1 + running bonus)`, ritualMult);
+      }
+
+      for (const productId of gameState.ownedPremiumProductIds) {
+        const buff = PREMIUM_PRODUCT_BUFFS[productId];
+        if (!buff) continue;
+        if (stat === 'moneyBonus' && buff.moneyMultiplier) {
+          pushMult(`💎 ${buff.name} (×${buff.moneyMultiplier} on 1 + money bonus)`, buff.moneyMultiplier);
+        }
+        if (stat === 'clickSpeedBonus' && buff.clickSpeedBonus) {
+          pushAdd(`💎 ${buff.name} (click speed)`, buff.clickSpeedBonus);
+        }
+        if (stat === 'minerSpeedBonus' && buff.minerSpeedBonus) {
+          pushAdd(`💎 ${buff.name} (miner speed)`, buff.minerSpeedBonus);
+        }
+      }
+
+      const wt = gameState.wanderingTraderPermBuffs;
+      if (wt) {
+        if (stat === 'moneyBonus' && wt.moneyBonus) pushAdd('🧳 Wandering Trader', wt.moneyBonus);
+        if (stat === 'couponBonus' && wt.couponLuckBonus) pushAdd('🧳 Wandering Trader (luck → lottery)', wt.couponLuckBonus);
+        if (stat === 'minerSpeedBonus' && wt.minerSpeedBonus) pushAdd('🧳 Wandering Trader', wt.minerSpeedBonus);
+        if (stat === 'minerDamageBonus' && wt.minerDamageBonus) pushAdd('🧳 Wandering Trader', wt.minerDamageBonus);
+      }
+
+      for (const swap of gameState.shadySamSwaps || []) {
+        const samMap: Record<string, BonusStat> = {
+          couponLuck: 'couponBonus',
+          minerSpeed: 'minerSpeedBonus',
+          clickDamage: 'clickSpeedBonus',
+          pcxDamage: 'rockDamageBonus',
+          moneyMultiplier: 'moneyBonus',
+          minerDamage: 'minerDamageBonus',
+        };
+        if (samMap[swap.buffStat] === stat) pushAdd('🎭 Shady Sam (buff)', swap.amount);
+        if (samMap[swap.debuffStat] === stat) pushAdd('🎭 Shady Sam (debuff)', -swap.amount);
+      }
+
+      const sideAmt = gameState.sideLevelBuffs?.[stat];
+      if (sideAmt) pushAdd(`📊 Side level ${gameState.sideLevel ?? 0}`, sideAmt);
+
+      for (const nodeId of gameState.ownedAscensionNodeIds || []) {
+        const node = ASCENSION_NODES.find((n) => n.id === nodeId);
+        if (!node) continue;
+        const e = node.effects;
+        if (stat === 'moneyBonus' && e.moneyBonus) pushAdd(`🌟 ${node.name}`, e.moneyBonus);
+        if (stat === 'rockDamageBonus' && e.damageBonus) pushAdd(`🌟 ${node.name}`, e.damageBonus);
+        if (stat === 'clickSpeedBonus' && e.clickSpeedBonus) pushAdd(`🌟 ${node.name}`, e.clickSpeedBonus);
+        if (stat === 'couponBonus' && e.luckBonus) pushAdd(`🌟 ${node.name} (luck → lottery)`, e.luckBonus);
+        if (stat === 'luckBonus' && e.luckBonus) pushAdd(`🌟 ${node.name}`, e.luckBonus);
+        if (stat === 'dropChanceBonus' && e.dropChanceBonus) pushAdd(`🌟 ${node.name}`, e.dropChanceBonus);
+      }
+
+      for (const nodeId of gameState.ownedAscensionNodeIds || []) {
+        const node = ASCENSION_NODES.find((n) => n.id === nodeId);
+        if (!node) continue;
+        const e = node.effects;
+        if (stat === 'moneyBonus' && e.allMoneyMultiplier && e.allMoneyMultiplier > 1) {
+          pushMult(`🌟 ${node.name} (× all money)`, e.allMoneyMultiplier);
+        }
+        if (stat === 'rockDamageBonus' && e.allDamageMultiplier && e.allDamageMultiplier > 1) {
+          pushMult(`🌟 ${node.name} (× all damage)`, e.allDamageMultiplier);
+        }
+        if (stat === 'clickSpeedBonus' && e.allClickSpeedMultiplier && e.allClickSpeedMultiplier > 1) {
+          pushMult(`🌟 ${node.name} (× all click speed)`, e.allClickSpeedMultiplier);
+        }
+      }
+
+      const promoLuck = gameState.promoPermanentBonuses?.luckBonus || 0;
+      const promoDrop = gameState.promoPermanentBonuses?.dropChanceBonus || 0;
+      if (stat === 'couponBonus' && promoLuck) pushAdd('🎁 Promo (luck → lottery)', promoLuck);
+      if (stat === 'luckBonus' && promoLuck) pushAdd('🎁 Promo permanent luck', promoLuck);
+      if (stat === 'dropChanceBonus' && promoDrop) pushAdd('🎁 Promo permanent drops', promoDrop);
+
+      if (gameState.hasD1PlayerPack && gameState.currentPickaxeId === D1_PICKAXE_ID) {
+        pushBonusFieldScale('🎮 D1 player pack + D1 pickaxe equipped', 3);
+      }
+
+      return entries;
+    },
+    [gameState],
+  );
 
   // =====================
   // RELIC & TALISMAN FUNCTIONS
@@ -3842,7 +4104,8 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         };
       });
     } else {
-      if (gameState.yatesDollars < cost.money) return false;
+      const moneyCost = applyShopPricePenalty(cost.money, gameState.equippedTrinketIds);
+      if (gameState.yatesDollars < moneyCost) return false;
       setGameState(prev => {
         // If the base trinket was equipped, swap it for the relic
         let newEquippedIds = prev.equippedTrinketIds;
@@ -3851,7 +4114,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         }
         return {
           ...prev,
-          yatesDollars: prev.yatesDollars - cost.money,
+          yatesDollars: prev.yatesDollars - moneyCost,
           ownedRelicIds: [...(prev.ownedRelicIds || []), relicId],
           equippedTrinketIds: newEquippedIds,
         };
@@ -3870,9 +4133,10 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     
     const cost = TALISMAN_CONVERSION_COSTS[trinketId];
     if (!cost) return false;
+    const moneyCost = applyShopPricePenalty(cost.money, gameState.equippedTrinketIds);
     // Check if can afford
     if (gameState.minerCount < cost.miners) return false;
-    if (gameState.yatesDollars < cost.money) return false;
+    if (gameState.yatesDollars < moneyCost) return false;
     
     const talismanId = `${trinketId}_talisman`;
     const wasEquipped = gameState.equippedTrinketIds.includes(trinketId);
@@ -3886,7 +4150,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       return {
         ...prev,
         minerCount: prev.minerCount - cost.miners,
-        yatesDollars: prev.yatesDollars - cost.money,
+        yatesDollars: prev.yatesDollars - moneyCost,
         ownedTalismanIds: [...(prev.ownedTalismanIds || []), talismanId],
         equippedTrinketIds: newEquippedIds,
       };
@@ -3899,8 +4163,14 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
   // =====================
   
   const getMinerCostFn = useCallback(() => {
-    return getMinerCost(gameState.minerCount, gameState.prestigeCount, gameState.isHardMode);
-  }, [gameState.minerCount, gameState.prestigeCount, gameState.isHardMode]);
+    return getMinerCost(
+      gameState.minerCount,
+      gameState.prestigeCount,
+      gameState.isHardMode,
+      gameState.sideLevel || 0,
+      gameState.equippedTrinketIds,
+    );
+  }, [gameState.minerCount, gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel, gameState.equippedTrinketIds]);
 
   const buyMiner = useCallback(() => {
     if (gameState.minerCount >= MINER_MAX_COUNT) return false;
@@ -3911,7 +4181,13 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       return false; // Can't buy miners with these ranks equipped
     }
     
-    const cost = getMinerCost(gameState.minerCount, gameState.prestigeCount, gameState.isHardMode);
+    const cost = getMinerCost(
+      gameState.minerCount,
+      gameState.prestigeCount,
+      gameState.isHardMode,
+      gameState.sideLevel || 0,
+      gameState.equippedTrinketIds,
+    );
     if (gameState.yatesDollars < cost) return false;
     
     setGameState(prev => ({
@@ -3921,7 +4197,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     }));
     
     return true;
-  }, [gameState.minerCount, gameState.yatesDollars, gameState.buildings.temple.equippedRank]);
+  }, [gameState.minerCount, gameState.yatesDollars, gameState.buildings.temple.equippedRank, gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel, gameState.equippedTrinketIds]);
 
   // =====================
   // PRESTIGE UPGRADE FUNCTIONS
@@ -4488,7 +4764,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       let miners = prev.minerCount;
       for (let i = 0; i < count; i++) {
         if (miners >= MINER_MAX_COUNT) break;
-        const cost = getMinerCost(miners, prev.prestigeCount, prev.isHardMode, prev.sideLevel || 0);
+        const cost = getMinerCost(miners, prev.prestigeCount, prev.isHardMode, prev.sideLevel || 0, prev.equippedTrinketIds);
         if (money < cost) break;
         money -= cost;
         miners++;
@@ -4611,102 +4887,53 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     }));
   }, []);
 
-  // Shady Sam Mystery Box — replaces old stat swap system
+  // Shady Sam Mystery Box — paid; logic in lib/shadySamRewards.ts
   const openMysteryBox = useCallback((tier: 'sketchy' | 'suspicious' | 'cursed'): { isGood: boolean; reward: string } | null => {
-    const costs = { sketchy: 500_000, suspicious: 50_000_000, cursed: 5_000_000_000 };
-    const cost = costs[tier];
-    if (gameState.yatesDollars < cost) return null;
-
-    const roll = Math.random() * 100;
-    let rewardMsg = '';
-    let isGood = true;
-
-    const buffTypes: Array<'clickSpeed' | 'damage' | 'money' | 'allStats'> = ['clickSpeed', 'damage', 'money', 'allStats'];
-    const randomBuff = () => buffTypes[Math.floor(Math.random() * buffTypes.length)];
-    const buffName = (t: string) => t === 'money' ? 'Money' : t === 'damage' ? 'Damage' : t === 'clickSpeed' ? 'Click Speed' : 'All Stats';
-
-    setGameState(prev => {
-      const newState = { ...prev, yatesDollars: prev.yatesDollars - cost };
-
-      if (tier === 'sketchy') {
-        // 50% → 10% of your money, 40% → random buff 10-30s / 10-50%, 10% → nothing
-        if (roll < 50) {
-          const cashBonus = Math.floor(prev.yatesDollars * 0.10);
-          newState.yatesDollars += cashBonus;
-          newState.totalMoneyEarned = (prev.totalMoneyEarned || 0) + cashBonus;
-          rewardMsg = `💰 +$${cashBonus >= 1e6 ? (cashBonus / 1e6).toFixed(1) + 'M' : cashBonus >= 1e3 ? (cashBonus / 1e3).toFixed(1) + 'K' : cashBonus} (10% of your money)`;
-        } else if (roll < 90) {
-          const bt = randomBuff();
-          const pct = 10 + Math.floor(Math.random() * 41); // 10-50%
-          const dur = (10 + Math.floor(Math.random() * 21)) * 1000; // 10-30s
-          newState.activeBuffs = [...prev.activeBuffs, { id: `sam_${Date.now()}`, type: bt, multiplier: pct / 100, duration: dur, startTime: Date.now(), source: 'shadySam' as const, name: `Sam's ${buffName(bt)}`, icon: '🕶️' }];
-          rewardMsg = `⚡ +${pct}% ${buffName(bt)} for ${Math.round(dur / 1000)}s`;
-        } else {
-          isGood = false;
-          rewardMsg = '😐 Nothing... Sam shrugs';
-        }
-      } else if (tier === 'suspicious') {
-        // 40% → 5 Stokens, 20% → 40% of money, 30% → buff 30s-1min / 50-100%, 10% → common-legendary trinket
-        if (roll < 40) {
-          newState.stokens = (prev.stokens || 0) + 5;
-          rewardMsg = '💎 +5 Stokens!';
-        } else if (roll < 60) {
-          const cashBonus = Math.floor(prev.yatesDollars * 0.40);
-          newState.yatesDollars += cashBonus;
-          newState.totalMoneyEarned = (prev.totalMoneyEarned || 0) + cashBonus;
-          rewardMsg = `💰 +$${cashBonus >= 1e9 ? (cashBonus / 1e9).toFixed(1) + 'B' : cashBonus >= 1e6 ? (cashBonus / 1e6).toFixed(1) + 'M' : cashBonus} (40% of your money)`;
-        } else if (roll < 90) {
-          const bt = randomBuff();
-          const pct = 50 + Math.floor(Math.random() * 51); // 50-100%
-          const dur = (30 + Math.floor(Math.random() * 31)) * 1000; // 30-60s
-          newState.activeBuffs = [...prev.activeBuffs, { id: `sam_${Date.now()}`, type: bt, multiplier: pct / 100, duration: dur, startTime: Date.now(), source: 'shadySam' as const, name: `Sam's ${buffName(bt)}`, icon: '💪' }];
-          rewardMsg = `⚡ +${pct}% ${buffName(bt)} for ${Math.round(dur / 1000)}s`;
-        } else {
-          const validRarities = ['common', 'rare', 'epic', 'legendary'];
-          const pool = TRINKETS.filter(t => validRarities.includes(t.rarity) && !prev.ownedTrinketIds.includes(t.id));
-          if (pool.length > 0) {
-            const trinket = pool[Math.floor(Math.random() * pool.length)];
-            newState.ownedTrinketIds = [...prev.ownedTrinketIds, trinket.id];
-            rewardMsg = `🔮 ${trinket.name} (${trinket.rarity}) trinket!`;
-          } else {
-            newState.stokens = (prev.stokens || 0) + 10;
-            rewardMsg = '💎 +10 Stokens! (you own all eligible trinkets)';
-          }
-        }
-        isGood = true;
-      } else {
-        // Cursed: 50% → 60% of money, 40% → buff 1-3min / 100-300%, 10% → epic-secret trinket
-        if (roll < 50) {
-          const cashBonus = Math.floor(prev.yatesDollars * 0.60);
-          newState.yatesDollars += cashBonus;
-          newState.totalMoneyEarned = (prev.totalMoneyEarned || 0) + cashBonus;
-          rewardMsg = `💰 +$${cashBonus >= 1e12 ? (cashBonus / 1e12).toFixed(1) + 'T' : cashBonus >= 1e9 ? (cashBonus / 1e9).toFixed(1) + 'B' : cashBonus} (60% of your money)`;
-        } else if (roll < 90) {
-          const bt = randomBuff();
-          const pct = 100 + Math.floor(Math.random() * 201); // 100-300%
-          const dur = (60 + Math.floor(Math.random() * 121)) * 1000; // 60-180s
-          newState.activeBuffs = [...prev.activeBuffs, { id: `sam_${Date.now()}`, type: bt, multiplier: pct / 100, duration: dur, startTime: Date.now(), source: 'shadySam' as const, name: `Sam's ${buffName(bt)}`, icon: '🔥' }];
-          rewardMsg = `🔥 +${pct}% ${buffName(bt)} for ${Math.round(dur / 1000)}s`;
-        } else {
-          const validRarities = ['epic', 'legendary', 'mythic', 'secret'];
-          const pool = TRINKETS.filter(t => validRarities.includes(t.rarity) && !prev.ownedTrinketIds.includes(t.id));
-          if (pool.length > 0) {
-            const trinket = pool[Math.floor(Math.random() * pool.length)];
-            newState.ownedTrinketIds = [...prev.ownedTrinketIds, trinket.id];
-            rewardMsg = `✨ ${trinket.name} (${trinket.rarity}) trinket!`;
-          } else {
-            newState.stokens = (prev.stokens || 0) + 25;
-            rewardMsg = '💎 +25 Stokens! (you own all eligible trinkets)';
-          }
-        }
-        isGood = true;
-      }
-
-      return newState;
+    let out: { isGood: boolean; reward: string } | null = null;
+    setGameState((prev) => {
+      const opened = openPaidMysteryBox(prev, tier);
+      if (!opened) return prev;
+      out = { isGood: opened.isGood, reward: opened.message };
+      return opened.next;
     });
+    return out;
+  }, []);
 
-    return { isGood, reward: rewardMsg };
-  }, [gameState.yatesDollars]);
+  const openPendingPromoMysteryCrate = useCallback((): { message: string; remaining: number } | null => {
+    let out: { message: string; remaining: number } | null = null;
+    setGameState((prev) => {
+      const q = prev.pendingPromoMysteryCrates || [];
+      if (q.length === 0) return prev;
+      const tier = q[0];
+      const { next, message } = grantPromoMysteryBox(prev, tier);
+      const rest = q.slice(1);
+      out = { message, remaining: rest.length };
+      return { ...next, pendingPromoMysteryCrates: rest };
+    });
+    return out;
+  }, []);
+
+  const redeemPromoCode = useCallback(
+    (raw: string): { ok: boolean; error?: string; rewardsSummary?: string[] } => {
+      const normalized = normalizePromoCodeInput(raw);
+      const match = PROMO_CODE_IDS.find((c) => c === normalized);
+      if (!match) return { ok: false, error: 'Unknown code.' };
+      let err: string | undefined;
+      let summary: string[] | undefined;
+      setGameState((prev) => {
+        const res = applyPromoCode(prev, match, userId ?? null);
+        if (!res.ok) {
+          err = res.error;
+          return prev;
+        }
+        summary = res.rewardsSummary;
+        return res.next;
+      });
+      if (err) return { ok: false, error: err };
+      return { ok: true, rewardsSummary: summary };
+    },
+    [userId]
+  );
 
   // Check if player can activate the Golden Cookie ritual
   const canActivateRitual = useCallback((): boolean => {
@@ -4814,7 +5041,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     const building = BUILDINGS.find(b => b.id === buildingId);
     if (!building) return Infinity;
     const currentCount = getBuildingCount(buildingId, gameState);
-    let cost = getBuildingCost(building, currentCount, gameState.yatesDollars);
+    let cost = applyShopPricePenalty(getBuildingCost(building, currentCount, gameState.yatesDollars), gameState.equippedTrinketIds);
     if (buildingId === 'wizard_tower') {
       const wizAscEff = sumAscensionEffects(gameState.ownedAscensionNodeIds || []);
       cost = Math.floor(cost * Math.max(0, 1 - wizAscEff.wizardCostReduction));
@@ -4828,7 +5055,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     if (!canBuyBuilding(building, gameState)) return false;
 
     const currentCount = getBuildingCount(buildingId, gameState);
-    let cost = getBuildingCost(building, currentCount, gameState.yatesDollars);
+    let cost = applyShopPricePenalty(getBuildingCost(building, currentCount, gameState.yatesDollars), gameState.equippedTrinketIds);
     if (buildingId === 'wizard_tower') {
       const wizAscEff = sumAscensionEffects(gameState.ownedAscensionNodeIds || []);
       cost = Math.floor(cost * Math.max(0, 1 - wizAscEff.wizardCostReduction));
@@ -4977,7 +5204,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     const currentTier = gameState.buildings.bank.bankTier ?? 0;
     const nextTier = currentTier + 1;
     if (nextTier > BANK_MAX_TIER) return false;
-    const cost = BANK_TIERS[nextTier].unlockCost;
+    const cost = applyShopPricePenalty(BANK_TIERS[nextTier].unlockCost, gameState.equippedTrinketIds);
     if (gameState.yatesDollars < cost) return false;
 
     setGameState(prev => ({
@@ -4993,9 +5220,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     }));
 
     return true;
-  }, [gameState.buildings.bank, gameState.yatesDollars]);
-
-  // Get bank interest multiplier from equipped trinkets
+  }, [gameState.buildings.bank, gameState.yatesDollars, gameState.equippedTrinketIds]);
   const getBankInterestMultiplier = useCallback((): number => {
     let multiplier = 1;
     for (const trinketId of gameState.equippedTrinketIds) {
@@ -5608,7 +5833,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       case 'timeWarp': {
         // Calculate 1 hour of miner income with full bonuses applied
         const bonuses = getTotalBonuses();
-        const totalDamageBonus = bonuses.minerDamageBonus;
+        const totalDamageBonus = bonuses.minerDamageBonus + bonuses.minerSpeedBonus;
         const totalMoneyBonus = bonuses.moneyBonus;
         const minerDamage = Math.ceil(gameState.minerCount * MINER_BASE_DAMAGE * (1 + totalDamageBonus));
         const ticksPerHour = 3600;
@@ -6362,6 +6587,8 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         addShadySamSwap,
         removeShadySamSwap,
         openMysteryBox,
+        openPendingPromoMysteryCrate,
+        redeemPromoCode,
         activateGoldenCookieRitual,
         canActivateRitual,
         claimGoldenCookieReward,

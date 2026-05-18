@@ -23,11 +23,25 @@ export default function EmployeeLoginPage() {
       router.push('/');
     } else {
       if (result.error === 'id') {
-        setError("I'm sorry you typed id wrong, please try again, or check if you are in the wrong space.");
+        setError(
+          'No employee matched that ID. In Supabase: Table Editor → employees — look up the id you typed. If it is missing, run sql/00_EMPLOYEES_AND_TASKS.sql. If the row exists but login still fails, run sql/FIX_EMPLOYEES_LOGIN.sql (RLS can hide rows). Confirm .env.local points at THIS Supabase project.',
+        );
       } else if (result.error === 'password') {
-        setError("I'm sorry you typed password wrong, please try again, or check if you are in the wrong space.");
+        setError(
+          'Wrong password. Bernardo\'s seeded password from the docs is typically PSSW (check SUPABASE_SETUP or sql/00_EMPLOYEES_AND_TASKS.sql).',
+        );
+      } else if (result.error === 'rls') {
+        setError(
+          'Database blocked the login (Row Level Security on employees). Run sql/FIX_EMPLOYEES_LOGIN.sql in Supabase SQL Editor.',
+        );
+      } else if (result.error === 'no_table') {
+        setError('Database is missing the employees table. Run sql/00_EMPLOYEES_AND_TASKS.sql first.');
+      } else if (result.error === 'config') {
+        setError(
+          'Server missing Supabase env vars. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to .env.local and restart dev.',
+        );
       } else {
-        setError("Login failed. Please try again.");
+        setError('Login failed — check terminal / browser console or try again.');
       }
     }
 

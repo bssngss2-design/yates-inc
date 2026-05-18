@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useClient } from '@/contexts/ClientContext';
 import { PICKAXES, ROCKS } from '@/lib/gameData';
 import { supabase } from '@/lib/supabase';
-import { TRINKETS, TITLES, ACHIEVEMENTS, getPrestigePriceMultiplier } from '@/types/game';
+import { TRINKETS, TITLES, ACHIEVEMENTS, getPurchasePriceMultiplier } from '@/types/game';
 // Terminal password validation is now server-side via /api/terminal/validate
 
 // Admin IDs that can ban users (only Bernardo and Logan)
@@ -154,7 +154,7 @@ export default function GameTerminal({ isOpen, onClose, onMine }: GameTerminalPr
         const highestOwned = gameState.ownedPickaxeIds.length > 0 ? Math.max(...gameState.ownedPickaxeIds) : 0;
         const nextPickaxe = PICKAXES.find(p => p.id === highestOwned + 1);
         if (nextPickaxe) {
-          const scaledPrice = Math.floor(nextPickaxe.price * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0));
+          const scaledPrice = Math.floor(nextPickaxe.price * getPurchasePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0, gameState.equippedTrinketIds));
           if (gameState.yatesDollars >= scaledPrice) {
             buyPickaxe(nextPickaxe.id);
           }

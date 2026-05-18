@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { useGame } from '@/contexts/GameContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { PICKAXES, getNextRockUnlockInfo } from '@/lib/gameData';
-import { AUTOCLICKER_COST, AUTOCLICKER_CPS, getPrestigePriceMultiplier, YATES_PICKAXE_ID, DARKNESS_PICKAXE_IDS, LIGHT_PICKAXE_IDS, GamePath, EXOTIC_ROCKS } from '@/types/game';
+import { AUTOCLICKER_COST, AUTOCLICKER_CPS, getPurchasePriceMultiplier, DARKNESS_PICKAXE_IDS, LIGHT_PICKAXE_IDS, GamePath, EXOTIC_ROCKS, NON_PROGRESSION_PICKAXE_IDS, BonusBreakdownEntry } from '@/types/game';
 import GameShop from './GameShop';
 import ShipmentModal from './ShipmentModal';
 import RockSelector from './RockSelector';
@@ -30,10 +30,13 @@ import TempleModal from './TempleModal';
 import WizardTowerSidebar from './WizardTowerSidebar';
 import BankModal from './BankModal';
 import ShadySamModal from './ShadySamModal';
+import PromoMysteryCrateOverlay from './PromoMysteryCrateOverlay';
 import SideLevelPanel from './SideLevelPanel';
 import AscensionTree from './AscensionTree';
 import { MINER_BASE_DAMAGE, getScaledRockHP, BUILDINGS, BuildingType, getMinerCost } from '@/types/game';
 import { ROCKS } from '@/lib/gameData';
+import { formatGameNumber } from '@/lib/formatGameNumber';
+import { estimateNonMinerBuildingMoneyPerSec } from '@/lib/estimatePassiveMoneyPerSec';
 
 interface MiningGameProps {
   onExit?: () => void;
@@ -107,7 +110,7 @@ export default function MiningGame({ onExit }: MiningGameProps) {
   const isEmployee = !!employee?.id && /^\d+$/.test(employee.id);
 
   // Calculate scaled autoclicker cost (10% increase every 5 prestiges + hard mode multiplier)
-  const scaledAutoclickerCost = Math.floor(AUTOCLICKER_COST * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0));
+  const scaledAutoclickerCost = Math.floor(AUTOCLICKER_COST * getPurchasePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0, gameState.equippedTrinketIds));
 
   const [moneyPopups, setMoneyPopups] = useState<MoneyPopup[]>([]);
   const [particles, setParticles] = useState<Particle[]>([]);
@@ -337,24 +340,7 @@ export default function MiningGame({ onExit }: MiningGameProps) {
     return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
   }, [onExit, handleMine, saveNow]);
 
-  const formatNumber = (num: number): string => {
-    if (!isFinite(num)) return '∞';
-    if (num >= 1e42) return `${(num / 1e42).toFixed(1)}Tr`;
-    if (num >= 1e39) return `${(num / 1e39).toFixed(1)}Dr`;
-    if (num >= 1e36) return `${(num / 1e36).toFixed(1)}Un`;
-    if (num >= 1e33) return `${(num / 1e33).toFixed(1)}Dc`;
-    if (num >= 1e30) return `${(num / 1e30).toFixed(1)}No`;
-    if (num >= 1e27) return `${(num / 1e27).toFixed(1)}Oc`;
-    if (num >= 1e24) return `${(num / 1e24).toFixed(1)}Sp`;
-    if (num >= 1e21) return `${(num / 1e21).toFixed(1)}Sx`;
-    if (num >= 1e18) return `${(num / 1e18).toFixed(1)}Qi`;
-    if (num >= 1e15) return `${(num / 1e15).toFixed(1)}Q`;
-    if (num >= 1e12) return `${(num / 1e12).toFixed(1)}T`;
-    if (num >= 1e9) return `${(num / 1e9).toFixed(1)}B`;
-    if (num >= 1e6) return `${(num / 1e6).toFixed(1)}M`;
-    if (num >= 1e3) return `${(num / 1e3).toFixed(1)}K`;
-    return num.toString();
-  };
+  const formatNumber = formatGameNumber;
 
   const getCouponLabel = (type: string): string => {
     switch (type) {
@@ -374,11 +360,16 @@ export default function MiningGame({ onExit }: MiningGameProps) {
 
   const bonuses = getTotalBonuses();
   const minerDamageBonus = bonuses.minerDamageBonus + bonuses.minerSpeedBonus;
-  const minerDps = Math.max(0, Math.ceil(gameState.minerCount * MINER_BASE_DAMAGE * (1 + minerDamageBonus)));
+  const regularMinerDps = Math.max(
+    0,
+    Math.ceil(gameState.minerCount * MINER_BASE_DAMAGE * (1 + minerDamageBonus)),
+  );
+  const shadowMinerDps = (gameState.buildings.wizard_tower.shadowMiners || 0) * 1000;
+  const minerDps = regularMinerDps + shadowMinerDps;
 
   const baselinePrestigeEarn = gameState.totalMoneyEarnedAtPrestigeStart ?? 0;
   const moneyEarnedThisPrestige = Math.max(0, (gameState.totalMoneyEarned ?? 0) - baselinePrestigeEarn);
-  /** Miner-focused $/s estimate (damage converted via break reward vs rock HP); excludes bank/temple/other passives */
+  /** Miner + shadow-miner $/s (rock-break model; matches GameContext miner tick). */
   const estimatedMinerMoneyPerSec = useMemo(() => {
     const hp = Math.max(1, scaledRockMaxHP);
     const approxPerBreak =
@@ -392,14 +383,21 @@ export default function MiningGame({ onExit }: MiningGameProps) {
     minerDps,
   ]);
 
+  const buildingPassiveMoneyPerSec = useMemo(
+    () => estimateNonMinerBuildingMoneyPerSec(gameState, currentRock, scaledRockMaxHP),
+    [gameState, currentRock, scaledRockMaxHP],
+  );
+
+  const estimatedTotalMoneyPerSec = estimatedMinerMoneyPerSec + buildingPassiveMoneyPerSec;
+
   // Check if player can buy the next pickaxe (sequential order, accounting for path-locked pickaxes)
   const canBuyNextPickaxe = useMemo(() => {
     // Find the highest owned regular pickaxe (excluding Yates)
-    const regularOwnedIds = gameState.ownedPickaxeIds.filter(id => id !== YATES_PICKAXE_ID);
+    const regularOwnedIds = gameState.ownedPickaxeIds.filter((id) => !NON_PROGRESSION_PICKAXE_IDS.includes(id));
     const highestOwnedId = regularOwnedIds.length > 0 ? Math.max(...regularOwnedIds) : 0;
     
     // Determine which pickaxe IDs to skip based on player's path
-    const skippedIds = new Set<number>([YATES_PICKAXE_ID]);
+    const skippedIds = new Set<number>([...NON_PROGRESSION_PICKAXE_IDS]);
     if (gameState.chosenPath === 'darkness') {
       LIGHT_PICKAXE_IDS.forEach(id => skippedIds.add(id));
     } else if (gameState.chosenPath === 'light') {
@@ -421,9 +419,9 @@ export default function MiningGame({ onExit }: MiningGameProps) {
     if (!nextPickaxe) return false;
     
     // Can afford it? (with prestige price scaling AND hard mode multiplier)
-    const scaledPrice = Math.floor(nextPickaxe.price * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0));
+    const scaledPrice = Math.floor(nextPickaxe.price * getPurchasePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0, gameState.equippedTrinketIds));
     return gameState.yatesDollars >= scaledPrice;
-  }, [gameState.ownedPickaxeIds, gameState.yatesDollars, gameState.prestigeCount, gameState.chosenPath, gameState.isHardMode]);
+  }, [gameState.ownedPickaxeIds, gameState.yatesDollars, gameState.prestigeCount, gameState.chosenPath, gameState.isHardMode, gameState.sideLevel, gameState.equippedTrinketIds]);
 
   // Get next rock unlock progress (scaled by prestige, based on current rock)
   const nextRockInfo = useMemo(() => {
@@ -575,7 +573,13 @@ export default function MiningGame({ onExit }: MiningGameProps) {
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
 
   // Miner cost
-  const minerCost = getMinerCost(gameState.minerCount, gameState.prestigeCount, gameState.isHardMode);
+  const minerCost = getMinerCost(
+    gameState.minerCount,
+    gameState.prestigeCount,
+    gameState.isHardMode,
+    gameState.sideLevel || 0,
+    gameState.equippedTrinketIds,
+  );
 
   // Active buffs for left panel (reuses BuffBar logic)
   const [activeEffects, setActiveEffects] = useState<{ id: string; name: string; icon: string; timeLeft: number; type: string }[]>([]);
@@ -1263,8 +1267,8 @@ export default function MiningGame({ onExit }: MiningGameProps) {
                       <dd className="text-[11px] font-black text-[#145214] tabular-nums">{lastTapMoney > 0 ? `$${formatNumber(lastTapMoney)}` : '—'}</dd>
                     </div>
                     <div className="flex justify-between gap-2">
-                      <dt className="text-[10px] font-black text-[#5c4332] uppercase leading-tight">Money per sec <span className="normal-case font-semibold opacity-85">(~miners)</span></dt>
-                      <dd className="text-[11px] font-black text-[#144a72] tabular-nums">${formatNumber(Math.round(estimatedMinerMoneyPerSec))}</dd>
+                      <dt className="text-[10px] font-black text-[#5c4332] uppercase leading-tight">Money per sec <span className="normal-case font-semibold opacity-85">(miners + buildings)</span></dt>
+                      <dd className="text-[11px] font-black text-[#144a72] tabular-nums">${formatNumber(Math.round(estimatedTotalMoneyPerSec))}</dd>
                     </div>
                   </dl>
                 </section>
@@ -1284,7 +1288,9 @@ export default function MiningGame({ onExit }: MiningGameProps) {
                         { key: 'dropChanceBonus' as const, icon: '🎯', label: 'Drops', color: 'text-indigo-800', val: bonuses.dropChanceBonus },
                         { key: 'minerDamageBonus' as const, icon: '⛏️', label: 'Miner Dmg', color: 'text-orange-900', val: bonuses.minerDamageBonus },
                         { key: 'minerSpeedBonus' as const, icon: '🏃', label: 'Miner Spd', color: 'text-teal-800', val: bonuses.minerSpeedBonus },
-                      ]).map(s => (
+                      ]).map(s => {
+                        const breakdownRows = expandedBonusStat === s.key ? getBonusBreakdown(s.key) : null;
+                        return (
                         <div key={s.key} data-bonus-row={s.key}>
                           <button
                             type="button"
@@ -1300,24 +1306,57 @@ export default function MiningGame({ onExit }: MiningGameProps) {
                             </span>
                             <span className="text-[10px] text-[#8b7355] font-black">{expandedBonusStat === s.key ? '▼' : '▶'}</span>
                           </button>
-                          {expandedBonusStat === s.key && (
+                          {breakdownRows !== null && (
                             <div className="ml-2 mt-1 mb-2 p-2 rounded-sm bg-[#f5edd8] border-2 border-[#c9a887] space-y-1">
-                              {getBonusBreakdown(s.key).map((entry, i) => (
+                              {breakdownRows.map((entry: BonusBreakdownEntry, i: number) => (
                                 <div key={i} className="flex justify-between text-[10px] gap-2 font-semibold">
                                   <span className="text-[#3d2920] shrink">{entry.source}</span>
-                                  <span className={entry.value >= 0 ? 'text-[#0d6620]' : 'text-[#8b1515]'}>
-                                    {entry.value >= 0 ? '+' : ''}
-                                    {s.key === 'luckBonus' || s.key === 'dropChanceBonus' ? entry.value.toFixed(1) : `${(entry.value * 100).toFixed(0)}%`}
+                                  <span
+                                    className={
+                                      entry.kind === 'multiplier' || entry.kind === 'bonus_field_scale'
+                                        ? 'text-[#144a72]'
+                                        : entry.value >= 0
+                                          ? 'text-[#0d6620]'
+                                          : 'text-[#8b1515]'
+                                    }
+                                  >
+                                    {entry.kind === 'multiplier' && entry.multiplier != null && (
+                                      <span className="tabular-nums">
+                                        ×{entry.multiplier.toFixed(2)}{' '}
+                                        <span className="text-[9px] font-normal text-[#6b5344]">(on 1+bonus)</span>
+                                      </span>
+                                    )}
+                                    {entry.kind === 'bonus_field_scale' && entry.multiplier != null && (
+                                      <span className="tabular-nums">
+                                        ×{entry.multiplier.toFixed(0)}{' '}
+                                        <span className="text-[9px] font-normal text-[#6b5344]">(bonus field)</span>
+                                      </span>
+                                    )}
+                                    {(!entry.kind || entry.kind === 'additive') && (
+                                      <>
+                                        {entry.value >= 0 ? '+' : ''}
+                                        {s.key === 'luckBonus' || s.key === 'dropChanceBonus'
+                                          ? entry.value.toFixed(1)
+                                          : `${(entry.value * 100).toFixed(0)}%`}
+                                      </>
+                                    )}
                                   </span>
                                 </div>
                               ))}
-                              {getBonusBreakdown(s.key).length === 0 && (
-                                <div className="text-[10px] text-[#7a6655] font-semibold">No sources — stat is 0 or only from stacking elsewhere.</div>
+                              {breakdownRows.length === 0 && (
+                                <div className="text-[10px] text-[#7a6655] font-semibold">No sources — stat is 0.</div>
+                              )}
+                              {breakdownRows.length > 0 && (
+                                <p className="text-[9px] text-[#7a6655] font-semibold leading-snug pt-1 border-t border-[#d4c4a8]">
+                                  +% rows add. × rows multiply <span className="font-mono">(1 + total)</span> (order matches the game). D1 ×3 multiplies the bonus
+                                  number itself, same as code.
+                                </p>
                               )}
                             </div>
                           )}
                         </div>
-                      ))}
+                      );
+                      })}
                     </div>
                   </div>
                 </section>
@@ -1529,6 +1568,7 @@ export default function MiningGame({ onExit }: MiningGameProps) {
       {showBankFromPanel && <BankModal onClose={() => setShowBankFromPanel(false)} />}
       {showShipmentModal && <ShipmentModal onClose={() => setShowShipmentModal(false)} />}
       {showShadySam && <ShadySamModal onClose={() => setShowShadySam(false)} />}
+      <PromoMysteryCrateOverlay />
       <SideLevelPanel isOpen={showSideLevel} onClose={() => setShowSideLevel(false)} />
 
       {/* CSS Animations */}

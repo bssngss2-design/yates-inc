@@ -5,13 +5,14 @@ import Image from 'next/image';
 import { useGame } from '@/contexts/GameContext';
 import { PICKAXES, BUILDINGS, PROGRESSIVE_UPGRADES, POWERUPS } from '@/lib/gameData';
 import { 
-  getPrestigePriceMultiplier, 
+  getPurchasePriceMultiplier, 
   PRESTIGE_UPGRADES,
   MINER_MAX_COUNT,
   getMinerCost,
   DARKNESS_PICKAXE_IDS,
   LIGHT_PICKAXE_IDS,
-  YATES_PICKAXE_ID,
+  D1_PICKAXE_ID,
+  NON_PROGRESSION_PICKAXE_IDS,
   BuildingType,
   ProgressiveUpgradeType,
   PowerupType,
@@ -321,6 +322,7 @@ export default function GameShop({ onClose }: GameShopProps) {
 
   // Check if pickaxe should be visible based on path
   const shouldShowPickaxe = (pickaxeId: number): boolean => {
+    if (pickaxeId === D1_PICKAXE_ID && !gameState.hasD1PlayerPack) return false;
     // Always show owned pickaxes
     if (gameState.ownedPickaxeIds.includes(pickaxeId)) return true;
     
@@ -351,7 +353,13 @@ export default function GameShop({ onClose }: GameShopProps) {
     let total = 0;
     for (let i = 0; i < count; i++) {
       if (gameState.minerCount + i >= MINER_MAX_COUNT) break;
-      total += getMinerCost(gameState.minerCount + i, gameState.prestigeCount);
+      total += getMinerCost(
+        gameState.minerCount + i,
+        gameState.prestigeCount,
+        gameState.isHardMode,
+        gameState.sideLevel || 0,
+        gameState.equippedTrinketIds,
+      );
     }
     return total;
   };
@@ -518,11 +526,13 @@ export default function GameShop({ onClose }: GameShopProps) {
                 const canAfford = canAffordPickaxe(pickaxe.id);
                 const pathLabel = getPathLabel(pickaxe.id);
                 const canBuyForPath = canBuyPickaxeForPath(pickaxe.id);
-                const scaledPrice = Math.floor(pickaxe.price * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0));
+                const scaledPrice = Math.floor(pickaxe.price * getPurchasePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0, gameState.equippedTrinketIds));
                 
-                const regularOwnedIds = gameState.ownedPickaxeIds.filter(id => id !== YATES_PICKAXE_ID);
+                const regularOwnedIds = gameState.ownedPickaxeIds.filter(
+                  (id) => !NON_PROGRESSION_PICKAXE_IDS.includes(id),
+                );
                 const highestOwnedId = regularOwnedIds.length > 0 ? Math.max(...regularOwnedIds) : 0;
-                const skippedIds = new Set<number>([YATES_PICKAXE_ID]);
+                const skippedIds = new Set<number>([...NON_PROGRESSION_PICKAXE_IDS]);
                 if (gameState.chosenPath === 'darkness') {
                   LIGHT_PICKAXE_IDS.forEach(id => skippedIds.add(id));
                 } else if (gameState.chosenPath === 'light') {

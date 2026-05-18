@@ -18,14 +18,21 @@ export const UPDATE_LOG: UpdateEntry[] = [
     ],
   },
   {
-    date: 'This Weekend',
+    date: 'Somewhere in between the 18th - Sunday',
     title: 'Grimoires Update',
-    major: true,
-    upcoming: true,
+    major: false,
+    upcoming: false,
     bullets: [
       'Grimoires system — new permanent unlockables with unique effects.',
-      'Scheduled for Friday night / Saturday.',
       'More details to be announced.',
+    ],
+  },
+  {
+    date: '05/17/2026',
+    title: 'QoL',
+    bullets: [
+      'A bunch of quality-of-life changes; promo codes were added (redeem in the Menu area).',
+      'Use SORRY4DOWN and CODES in the Menu area for a bunch of rewards — sorry for the recent issues.',
     ],
   },
   {

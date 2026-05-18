@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-);
-
 export async function POST(request: NextRequest) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) {
+    return NextResponse.json({ needsPassword: false }, { status: 503 });
+  }
+
+  const supabase = createClient(url, anonKey);
+
   try {
     const { clientId } = await request.json();
 
@@ -14,15 +17,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ needsPassword: false }, { status: 400 });
     }
 
-    // Check if client has a password — only return boolean, NEVER the password itself
-    const { data, error } = await supabase
-      .from('clients')
-      .select('password')
-      .eq('id', clientId)
-      .single();
+    const { data, error } = await supabase.from('clients').select('password').eq('id', clientId).maybeSingle();
 
     if (error) {
-      // Column might not exist yet — show the popup
       return NextResponse.json({ needsPassword: true });
     }
 

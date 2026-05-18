@@ -4,8 +4,12 @@ import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useGame } from '@/contexts/GameContext';
 import { 
-  RARITY_COLORS, Trinket, getPrestigePriceMultiplier, TRINKETS,
-  RELIC_CONVERSION_COSTS, TALISMAN_CONVERSION_COSTS, RELIC_MULTIPLIERS, TALISMAN_MULTIPLIERS 
+  RARITY_COLORS, Trinket, getPurchasePriceMultiplier, TRINKETS,
+  RELIC_CONVERSION_COSTS, TALISMAN_CONVERSION_COSTS, RELIC_MULTIPLIERS, TALISMAN_MULTIPLIERS,
+  applyShopPricePenalty,
+  getDisplayTrinketEffects,
+  getSpecialTrinketOverride,
+  summarizeTrinketEffectsParts,
 } from '@/types/game';
 
 interface TrinketShopModalProps {
@@ -204,7 +208,7 @@ export default function TrinketShopModal({ isOpen, onClose }: TrinketShopModalPr
         ) : (
           <div className="grid grid-cols-2 gap-2 sm:gap-4">
             {trinketShopItems.map(trinket => {
-              const scaledCost = Math.floor(trinket.cost * getPrestigePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0));
+              const scaledCost = Math.floor(trinket.cost * getPurchasePriceMultiplier(gameState.prestigeCount, gameState.isHardMode, gameState.sideLevel || 0, gameState.equippedTrinketIds));
               const isOwned = ownsTrinket(trinket.id);
               return (
                 <TrinketCard
@@ -321,6 +325,8 @@ export default function TrinketShopModal({ isOpen, onClose }: TrinketShopModalPr
         const hasTalisman = ownsTalisman(selectedTrinket);
         const relicCost = RELIC_CONVERSION_COSTS[selectedTrinket];
         const talismanCost = TALISMAN_CONVERSION_COSTS[selectedTrinket];
+        const relicMoneyAdjusted = relicCost ? applyShopPricePenalty(relicCost.money, gameState.equippedTrinketIds) : 0;
+        const talismanMoneyAdjusted = talismanCost ? applyShopPricePenalty(talismanCost.money, gameState.equippedTrinketIds) : 0;
         // Use different multipliers based on path
         const relicMultiplier = RELIC_MULTIPLIERS[trinket.rarity];
         const talismanMultiplier = TALISMAN_MULTIPLIERS[trinket.rarity];
@@ -328,10 +334,10 @@ export default function TrinketShopModal({ isOpen, onClose }: TrinketShopModalPr
         
         // Check affordability - Relics can be paid with tokens OR money
         const canAffordRelicWithTokens = relicCost && gameState.prestigeTokens >= relicCost.prestigeTokens;
-        const canAffordRelicWithMoney = relicCost && gameState.yatesDollars >= relicCost.money;
+        const canAffordRelicWithMoney = relicCost && gameState.yatesDollars >= relicMoneyAdjusted;
         const canAffordTalisman = talismanCost && 
           gameState.minerCount >= talismanCost.miners && 
-          gameState.yatesDollars >= talismanCost.money;
+          gameState.yatesDollars >= talismanMoneyAdjusted;
         
         return (
           <div 
@@ -392,36 +398,36 @@ export default function TrinketShopModal({ isOpen, onClose }: TrinketShopModalPr
                 {/* Relic preview (Light) */}
                 <div className={`${gameState.chosenPath === 'light' ? '' : 'opacity-50'}`}>
                   <h4 className="text-yellow-400 font-bold text-sm mb-1">
-                    ✦ Relic ({relicMultiplier}x) {gameState.chosenPath === 'light' && '← Your path'}
+                    ✦ Relic
+                    {getSpecialTrinketOverride(trinket.id, true, false)
+                      ? ' (fixed stats)'
+                      : ` (${relicMultiplier}× base)`}{' '}
+                    {gameState.chosenPath === 'light' && '← Your path'}
                   </h4>
-                  <div className="grid grid-cols-2 gap-1 text-xs">
-                    {Object.entries(trinket.effects).map(([key, value]) => {
-                      if (typeof value !== 'number') return null;
-                      return (
-                        <div key={`relic-${key}`} className="text-gray-400">
-                          <span className="text-gray-300">+{(value * 100).toFixed(0)}%</span>
-                          <span className="text-yellow-400"> → +{(value * relicMultiplier * 100).toFixed(0)}%</span>
-                        </div>
-                      );
-                    })}
+                  <div className="grid grid-cols-1 gap-0.5 text-xs text-gray-300">
+                    {summarizeTrinketEffectsParts(getDisplayTrinketEffects(trinket, 'relic')).map((line, i) => (
+                      <div key={`relic-${i}-${line}`} className="text-yellow-400/90">
+                        {line}
+                      </div>
+                    ))}
                   </div>
                 </div>
                 
                 {/* Talisman preview (Dark) */}
                 <div className={`${gameState.chosenPath === 'darkness' ? '' : 'opacity-50'}`}>
                   <h4 className="text-purple-400 font-bold text-sm mb-1">
-                    ✧ Talisman ({talismanMultiplier}x) {gameState.chosenPath === 'darkness' && '← Your path'}
+                    ✧ Talisman
+                    {getSpecialTrinketOverride(trinket.id, false, true)
+                      ? ' (fixed stats)'
+                      : ` (${talismanMultiplier}× base)`}{' '}
+                    {gameState.chosenPath === 'darkness' && '← Your path'}
                   </h4>
-                  <div className="grid grid-cols-2 gap-1 text-xs">
-                    {Object.entries(trinket.effects).map(([key, value]) => {
-                      if (typeof value !== 'number') return null;
-                      return (
-                        <div key={`talisman-${key}`} className="text-gray-400">
-                          <span className="text-gray-300">+{(value * 100).toFixed(0)}%</span>
-                          <span className="text-purple-400"> → +{(value * talismanMultiplier * 100).toFixed(0)}%</span>
-                        </div>
-                      );
-                    })}
+                  <div className="grid grid-cols-1 gap-0.5 text-xs text-gray-300">
+                    {summarizeTrinketEffectsParts(getDisplayTrinketEffects(trinket, 'talisman')).map((line, i) => (
+                      <div key={`tal-${i}-${line}`} className="text-purple-400/90">
+                        {line}
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -465,7 +471,7 @@ export default function TrinketShopModal({ isOpen, onClose }: TrinketShopModalPr
                           <div>
                             <p className="text-gray-300 text-xs">Pay with Money</p>
                             <p className={`text-[10px] ${canAffordRelicWithMoney ? 'text-green-400' : 'text-red-400'}`}>
-                              Cost: ${formatMoney(relicCost.money)} (You have: ${formatMoney(gameState.yatesDollars)})
+                              {`Cost: $${formatMoney(relicMoneyAdjusted)} (You have: $${formatMoney(gameState.yatesDollars)})`}
                             </p>
                           </div>
                           <button
@@ -494,7 +500,7 @@ export default function TrinketShopModal({ isOpen, onClose }: TrinketShopModalPr
                           ✧ Convert to Talisman
                         </p>
                         <p className="text-gray-400 text-xs">
-                          {talismanCost.miners} miners + ${formatMoney(talismanCost.money)}
+                          {`${talismanCost.miners} miners + $${formatMoney(talismanMoneyAdjusted)}`}
                         </p>
                         <p className={`text-[10px] ${canAffordTalisman ? 'text-green-400' : 'text-red-400'}`}>
                           You have: {gameState.minerCount} miners, ${formatMoney(gameState.yatesDollars)}

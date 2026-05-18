@@ -46,7 +46,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { success: true };
     } catch (err) {
       console.error('Login error:', err);
-      return { success: false, error: 'id' };
+      return { success: false, error: 'server' };
     }
   };
 

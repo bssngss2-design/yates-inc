@@ -1,36 +1,54 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-);
-
 export async function POST(request: NextRequest) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) {
+    console.error('employee-login: NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY is unset');
+    return NextResponse.json({ success: false, error: 'config' }, { status: 500 });
+  }
+
+  const supabase = createClient(url, anonKey);
+
   try {
-    const { id, password } = await request.json();
+    const body = await request.json();
+    const id = typeof body?.id === 'string' ? body.id.trim() : '';
+    const password = typeof body?.password === 'string' ? body.password : '';
 
     if (!id || !password) {
-      return NextResponse.json({ success: false, error: 'id' }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'invalid' }, { status: 400 });
     }
 
-    // Fetch employee from Supabase — password stays on the server
     const { data, error } = await supabase
       .from('employees')
       .select('id, name, password, role, bio, mail_handle')
       .eq('id', id)
-      .single();
+      .maybeSingle();
 
-    if (error || !data) {
+    if (error) {
+      console.error('employee-login Supabase:', error.code, error.message);
+      const msg = error.message || '';
+      const isMissingTable = /does not exist|42P01/i.test(msg);
+      const isRls =
+        error.code === '42501' || /permission denied|row-level security|RLS/i.test(msg);
+      if (isMissingTable) {
+        return NextResponse.json({ success: false, error: 'no_table', detail: msg });
+      }
+      if (isRls) {
+        return NextResponse.json({ success: false, error: 'rls', detail: msg });
+      }
+      return NextResponse.json({ success: false, error: 'server', detail: msg });
+    }
+
+    if (!data) {
       return NextResponse.json({ success: false, error: 'id' });
     }
 
-    // Compare password SERVER-SIDE — never sent to client
     if (data.password !== password) {
       return NextResponse.json({ success: false, error: 'password' });
     }
 
-    // Return employee data WITHOUT the password
     return NextResponse.json({
       success: true,
       employee: {
@@ -43,6 +61,6 @@ export async function POST(request: NextRequest) {
     });
   } catch (err) {
     console.error('Employee login error:', err);
-    return NextResponse.json({ success: false, error: 'id' }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'server' }, { status: 500 });
   }
 }

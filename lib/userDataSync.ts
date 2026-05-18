@@ -85,7 +85,12 @@ export interface UserGameData {
   heavenly_chips?: number;
   total_hc_earned?: number;
   owned_ascension_node_ids?: string[];
-  // Timestamp (set by Supabase)
+  // Promo codes / D1 pack
+  redeemed_codes?: string;
+  has_d1_player_pack?: boolean;
+  promo_perm_bonuses?: string;
+  d1_mine_counter?: number;
+  pending_promo_crates?: string;
   updated_at?: string;
   /** Client-only: selects hard-mode Supabase table; never written as a column */
   _isHardMode?: boolean;
@@ -291,6 +296,11 @@ export async function saveUserGameData(data: Partial<UserGameData> & { user_id: 
       heavenly_chips: data.heavenly_chips,
       total_hc_earned: data.total_hc_earned,
       owned_ascension_node_ids: data.owned_ascension_node_ids,
+      redeemed_codes: data.redeemed_codes,
+      has_d1_player_pack: data.has_d1_player_pack,
+      promo_perm_bonuses: data.promo_perm_bonuses,
+      d1_mine_counter: data.d1_mine_counter,
+      pending_promo_crates: data.pending_promo_crates,
     });
 
     // FINAL CHECK: If version was provided and has changed, skip this save (a force save happened)
@@ -672,7 +682,12 @@ export function keepaliveSave(data: Partial<UserGameData> & { user_id: string; u
     heavenly_chips: data.heavenly_chips,
     total_hc_earned: data.total_hc_earned,
     owned_ascension_node_ids: data.owned_ascension_node_ids,
-  });
+      redeemed_codes: data.redeemed_codes,
+      has_d1_player_pack: data.has_d1_player_pack,
+      promo_perm_bonuses: data.promo_perm_bonuses,
+      d1_mine_counter: data.d1_mine_counter,
+      ...(data.pending_promo_crates !== undefined ? { pending_promo_crates: data.pending_promo_crates } : {}),
+    });
 
   // Use correct table based on game mode (was hardcoded to user_game_data before - corrupted hard mode players!)
   const tableName = getTableName(isHardMode);

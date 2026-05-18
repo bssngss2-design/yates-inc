@@ -78,13 +78,13 @@ export default function GameSettings({ isOpen, onClose }: GameSettingsProps) {
     setTimeout(() => setSaveStatus('idle'), 2000);
   }, [saveNow]);
 
-  const handleRedeemPromo = useCallback(() => {
+  const handleRedeemPromo = useCallback(async () => {
     const raw = promoInput.trim();
     if (!raw) {
       setPromoFeedback({ kind: 'err', message: 'Enter a code first.' });
       return;
     }
-    const res = redeemPromoCode(raw);
+    const res = await redeemPromoCode(raw);
     if (res.ok && res.rewardsSummary?.length) {
       setPromoFeedback({
         kind: 'ok',

@@ -50,7 +50,7 @@ import { useAuth } from './AuthContext';
 import { useClient } from './ClientContext';
 import { fetchUserGameData, debouncedSaveUserGameData, flushPendingData, savePurchase, forceImmediateSave, keepaliveSave, getPendingData, fetchUserPurchases, isCorruptNumber, sanitizeNumber, safeAdd, safeMoney } from '@/lib/userDataSync';
 import { openPaidMysteryBox, grantPromoMysteryBox } from '@/lib/shadySamRewards';
-import { applyPromoCode, normalizePromoCodeInput, PROMO_CODE_IDS } from '@/lib/promoCodes';
+import { applyPromoCode, normalizePromoCodeInput, PROMO_CODE_IDS, isPromoCodeValid } from '@/lib/promoCodes';
 import { supabase } from '@/lib/supabase';
 
 // Helper to add product sale contribution to active budget (50% of sale)
@@ -224,7 +224,7 @@ interface GameContextType {
   openMysteryBox: (tier: 'sketchy' | 'suspicious' | 'cursed') => { isGood: boolean; reward: string } | null;
   /** Apply next queued promo crate (after opening animation); returns reward copy for UI. */
   openPendingPromoMysteryCrate: () => { message: string; remaining: number } | null;
-  redeemPromoCode: (raw: string) => { ok: boolean; error?: string; rewardsSummary?: string[] };
+  redeemPromoCode: (raw: string) => Promise<{ ok: boolean; error?: string; rewardsSummary?: string[] }>;
   removeShadySamSwap: (swapId: string) => void;
   // Golden Cookie ritual (Darkness path)
   activateGoldenCookieRitual: () => boolean;
@@ -4914,10 +4914,14 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
   }, []);
 
   const redeemPromoCode = useCallback(
-    (raw: string): { ok: boolean; error?: string; rewardsSummary?: string[] } => {
+    async (raw: string): Promise<{ ok: boolean; error?: string; rewardsSummary?: string[] }> => {
       const normalized = normalizePromoCodeInput(raw);
       const match = PROMO_CODE_IDS.find((c) => c === normalized);
       if (!match) return { ok: false, error: 'Unknown code.' };
+      
+      const isValid = await isPromoCodeValid(match);
+      if (!isValid) return { ok: false, error: 'This code has expired or is no longer active.' };
+      
       let err: string | undefined;
       let summary: string[] | undefined;
       setGameState((prev) => {

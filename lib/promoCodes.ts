@@ -17,8 +17,35 @@ import { applyForcedPrestigeChain } from '@/lib/prestigeTransition';
 export const PROMO_CODE_IDS = ['CODES', 'SORRY4DOWN'] as const;
 export type PromoCodeId = (typeof PROMO_CODE_IDS)[number];
 
+export interface PromoCodeInfo {
+  code_id: PromoCodeId;
+  expires_at: string;
+  is_active: boolean;
+}
+
 export function normalizePromoCodeInput(raw: string): string {
   return raw.trim().toUpperCase().replace(/\s+/g, '');
+}
+
+/**
+ * Check if a promo code has expired by comparing current time to expires_at from database.
+ * Returns true if the code is still valid (not expired).
+ */
+export async function isPromoCodeValid(code: PromoCodeId): Promise<boolean> {
+  try {
+    const response = await fetch(`/api/promo-codes/${code}`);
+    if (!response.ok) return false;
+    
+    const data: PromoCodeInfo = await response.json();
+    if (!data.is_active) return false;
+    
+    const expiresAt = new Date(data.expires_at).getTime();
+    const now = Date.now();
+    return now < expiresAt;
+  } catch (error) {
+    console.error('Failed to check promo code validity:', error);
+    return false;
+  }
 }
 
 function buildingPathOk(state: GameState, buildingId: BuildingType): boolean {

@@ -1428,17 +1428,6 @@ export default function MiningGame({ onExit }: MiningGameProps) {
               <span className="text-[10px] uppercase tracking-wide">Rocks</span>
             </button>
 
-            {getBuildingCount('temple') > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowTempleFromPanel(true)}
-                className="flex h-14 w-[6.95rem] flex-col items-center justify-center gap-0.5 rounded-sm border-2 border-t-[#ffe8ea] border-l-[#ffe8ea] border-r-[#3d1818] border-b-[#3d1818] bg-[linear-gradient(180deg,#fad4d9,#eab0b9)] hover:brightness-[1.02] text-[#381018] font-black shadow-[inset_0_-2px_5px_rgba(50,14,22,0.12)] active:border-t-transparent active:border-l-transparent active:translate-x-px active:translate-y-px shrink-0"
-                title="Temple"
-              >
-                <span className="text-lg leading-none">🏛️</span>
-                <span className="text-[10px] uppercase tracking-wide">Temple</span>
-              </button>
-            )}
             {gameState.chosenPath === 'darkness' && gameState.prestigeCount >= 5 && (
               <button
                 type="button"

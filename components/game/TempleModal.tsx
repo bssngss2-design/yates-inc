@@ -121,8 +121,8 @@ export default function TempleModal({ onClose }: TempleModalProps) {
             <Image 
               src="/game/buildings/temple.png"
               alt="Temple"
-              width={48}
-              height={48}
+              width={160}
+              height={160}
               style={{ imageRendering: 'pixelated' }}
             />
             <div>

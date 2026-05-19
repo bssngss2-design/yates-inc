@@ -3863,14 +3863,15 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         const val = statMap[stat];
         if (val !== 0) {
           const suffix = isRelic ? ' (Relic)' : isTalisman ? ' (Talisman)' : '';
-          pushAdd(`🔮 ${trinket.name}${suffix}`, val);
+          const itemType = isRelic ? 'Relic' : isTalisman ? 'Talisman' : 'Trinket';
+          pushAdd(`🔮 ${trinket.name}${suffix} (${itemType})`, val);
         }
       }
 
       const synergyExtra = nonSpecRaw[stat] * (trinketMultiplier - 1);
       if (synergyExtra !== 0) {
         pushAdd(
-          `⚡ Trinket synergy (extra from ×${trinketMultiplier.toFixed(2)} on non-override trinket totals; Light + prestige + ascension trinket path)`,
+          `⚡ Trinket synergy (Synergy multiplier from Light path, prestige upgrades, and ascension nodes affecting trinket bonuses)`,
           synergyExtra,
         );
       }
@@ -3891,7 +3892,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
           luckBonus: luckPts,
           dropChanceBonus: 0,
         };
-        if (statMap[stat] !== 0) pushAdd(`⭐ ${upgrade.name}`, statMap[stat]);
+        if (statMap[stat] !== 0) pushAdd(`⭐ ${upgrade.name} (Prestige Upgrade)`, statMap[stat]);
       }
 
       for (const pu of PROGRESSIVE_UPGRADES) {
@@ -3900,19 +3901,19 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         if (b === 0) continue;
         switch (pu.id) {
           case 'pcxDamage':
-            if (stat === 'rockDamageBonus') pushAdd(`📈 ${pu.name} (Shop)`, b);
+            if (stat === 'rockDamageBonus') pushAdd(`📈 ${pu.name} (Progressive Upgrade - Shop)`, b);
             break;
           case 'money':
-            if (stat === 'moneyBonus') pushAdd(`📈 ${pu.name} (Shop)`, b);
+            if (stat === 'moneyBonus') pushAdd(`📈 ${pu.name} (Progressive Upgrade - Shop)`, b);
             break;
           case 'generalSpeed':
-            if (stat === 'clickSpeedBonus' || stat === 'minerSpeedBonus') pushAdd(`📈 ${pu.name} (Shop)`, b);
+            if (stat === 'clickSpeedBonus' || stat === 'minerSpeedBonus') pushAdd(`📈 ${pu.name} (Progressive Upgrade - Shop)`, b);
             break;
           case 'minerSpeed':
-            if (stat === 'minerSpeedBonus') pushAdd(`📈 ${pu.name} (Shop)`, b);
+            if (stat === 'minerSpeedBonus') pushAdd(`📈 ${pu.name} (Progressive Upgrade - Shop)`, b);
             break;
           case 'minerDamage':
-            if (stat === 'minerDamageBonus') pushAdd(`📈 ${pu.name} (Shop)`, b);
+            if (stat === 'minerDamageBonus') pushAdd(`📈 ${pu.name} (Progressive Upgrade - Shop)`, b);
             break;
         }
       }
@@ -3932,11 +3933,11 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
           luckBonus: 0,
           dropChanceBonus: 0,
         };
-        if (statMap[stat] !== 0) pushAdd(`👑 ${title.name}`, statMap[stat]);
+        if (statMap[stat] !== 0) pushAdd(`👑 ${title.name} (Title)`, statMap[stat]);
       }
 
       if (gameState.chosenPath === 'light' && stat === 'moneyBonus') {
-        pushAdd('☀️ Light path', 0.3);
+        pushAdd('☀️ Light path (Path Bonus)', 0.3);
       }
 
       if (gameState.sacrificeBuff && Date.now() < gameState.sacrificeBuff.endsAt) {
@@ -3951,7 +3952,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
           luckBonus: 0,
           dropChanceBonus: 0,
         };
-        if (statMap[stat] !== 0) pushAdd('🩸 Sacrifice', statMap[stat]);
+        if (statMap[stat] !== 0) pushAdd('🩸 Sacrifice (Ritual Buff)', statMap[stat]);
       }
 
       const templeRank = gameState.buildings.temple.equippedRank;
@@ -3962,7 +3963,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
           3: { moneyBonus: 0.9, rockDamageBonus: 1.2 },
         };
         const tv = templeValues[templeRank]?.[stat];
-        if (tv) pushAdd(`⛪ Temple rank ${templeRank}`, tv);
+        if (tv) pushAdd(`⛪ Temple rank ${templeRank} (Building Bonus)`, tv);
       }
 
       const ritualActive =
@@ -3971,29 +3972,29 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         Date.now() < gameState.buildings.wizard_tower.ritualEndTime;
       if (ritualActive && stat !== 'luckBonus' && stat !== 'dropChanceBonus') {
         const ritualMult = 3.0 + ascBonuses.wizardPowerBonus;
-        pushMult(`🔮 Wizard ritual (×${ritualMult.toFixed(2)} on 1 + running bonus)`, ritualMult);
+        pushMult(`🔮 Wizard ritual (Ritual Multiplier - Building Buff)`, ritualMult);
       }
 
       for (const productId of gameState.ownedPremiumProductIds) {
         const buff = PREMIUM_PRODUCT_BUFFS[productId];
         if (!buff) continue;
         if (stat === 'moneyBonus' && buff.moneyMultiplier) {
-          pushMult(`💎 ${buff.name} (×${buff.moneyMultiplier} on 1 + money bonus)`, buff.moneyMultiplier);
+          pushMult(`💎 ${buff.name} (Premium Product Multiplier)`, buff.moneyMultiplier);
         }
         if (stat === 'clickSpeedBonus' && buff.clickSpeedBonus) {
-          pushAdd(`💎 ${buff.name} (click speed)`, buff.clickSpeedBonus);
+          pushAdd(`💎 ${buff.name} (Premium Product - Click Speed)`, buff.clickSpeedBonus);
         }
         if (stat === 'minerSpeedBonus' && buff.minerSpeedBonus) {
-          pushAdd(`💎 ${buff.name} (miner speed)`, buff.minerSpeedBonus);
+          pushAdd(`💎 ${buff.name} (Premium Product - Miner Speed)`, buff.minerSpeedBonus);
         }
       }
 
       const wt = gameState.wanderingTraderPermBuffs;
       if (wt) {
-        if (stat === 'moneyBonus' && wt.moneyBonus) pushAdd('🧳 Wandering Trader', wt.moneyBonus);
-        if (stat === 'couponBonus' && wt.couponLuckBonus) pushAdd('🧳 Wandering Trader (luck → lottery)', wt.couponLuckBonus);
-        if (stat === 'minerSpeedBonus' && wt.minerSpeedBonus) pushAdd('🧳 Wandering Trader', wt.minerSpeedBonus);
-        if (stat === 'minerDamageBonus' && wt.minerDamageBonus) pushAdd('🧳 Wandering Trader', wt.minerDamageBonus);
+        if (stat === 'moneyBonus' && wt.moneyBonus) pushAdd('🧳 Wandering Trader (NPC Trader)', wt.moneyBonus);
+        if (stat === 'couponBonus' && wt.couponLuckBonus) pushAdd('🧳 Wandering Trader (NPC Trader - Lottery)', wt.couponLuckBonus);
+        if (stat === 'minerSpeedBonus' && wt.minerSpeedBonus) pushAdd('🧳 Wandering Trader (NPC Trader)', wt.minerSpeedBonus);
+        if (stat === 'minerDamageBonus' && wt.minerDamageBonus) pushAdd('🧳 Wandering Trader (NPC Trader)', wt.minerDamageBonus);
       }
 
       for (const swap of gameState.shadySamSwaps || []) {
@@ -4005,23 +4006,23 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
           moneyMultiplier: 'moneyBonus',
           minerDamage: 'minerDamageBonus',
         };
-        if (samMap[swap.buffStat] === stat) pushAdd('🎭 Shady Sam (buff)', swap.amount);
-        if (samMap[swap.debuffStat] === stat) pushAdd('🎭 Shady Sam (debuff)', -swap.amount);
+        if (samMap[swap.buffStat] === stat) pushAdd('🎭 Shady Sam (NPC Swap - Buff)', swap.amount);
+        if (samMap[swap.debuffStat] === stat) pushAdd('🎭 Shady Sam (NPC Swap - Debuff)', -swap.amount);
       }
 
       const sideAmt = gameState.sideLevelBuffs?.[stat];
-      if (sideAmt) pushAdd(`📊 Side level ${gameState.sideLevel ?? 0}`, sideAmt);
+      if (sideAmt) pushAdd(`📊 Side level ${gameState.sideLevel ?? 0} (Path Level-Up Buff)`, sideAmt);
 
       for (const nodeId of gameState.ownedAscensionNodeIds || []) {
         const node = ASCENSION_NODES.find((n) => n.id === nodeId);
         if (!node) continue;
         const e = node.effects;
-        if (stat === 'moneyBonus' && e.moneyBonus) pushAdd(`🌟 ${node.name}`, e.moneyBonus);
-        if (stat === 'rockDamageBonus' && e.damageBonus) pushAdd(`🌟 ${node.name}`, e.damageBonus);
-        if (stat === 'clickSpeedBonus' && e.clickSpeedBonus) pushAdd(`🌟 ${node.name}`, e.clickSpeedBonus);
-        if (stat === 'couponBonus' && e.luckBonus) pushAdd(`🌟 ${node.name} (luck → lottery)`, e.luckBonus);
-        if (stat === 'luckBonus' && e.luckBonus) pushAdd(`🌟 ${node.name}`, e.luckBonus);
-        if (stat === 'dropChanceBonus' && e.dropChanceBonus) pushAdd(`🌟 ${node.name}`, e.dropChanceBonus);
+        if (stat === 'moneyBonus' && e.moneyBonus) pushAdd(`🌟 ${node.name} (Ascension Node)`, e.moneyBonus);
+        if (stat === 'rockDamageBonus' && e.damageBonus) pushAdd(`🌟 ${node.name} (Ascension Node)`, e.damageBonus);
+        if (stat === 'clickSpeedBonus' && e.clickSpeedBonus) pushAdd(`🌟 ${node.name} (Ascension Node)`, e.clickSpeedBonus);
+        if (stat === 'couponBonus' && e.luckBonus) pushAdd(`🌟 ${node.name} (Ascension Node - Lottery)`, e.luckBonus);
+        if (stat === 'luckBonus' && e.luckBonus) pushAdd(`🌟 ${node.name} (Ascension Node)`, e.luckBonus);
+        if (stat === 'dropChanceBonus' && e.dropChanceBonus) pushAdd(`🌟 ${node.name} (Ascension Node)`, e.dropChanceBonus);
       }
 
       for (const nodeId of gameState.ownedAscensionNodeIds || []) {
@@ -4029,24 +4030,24 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         if (!node) continue;
         const e = node.effects;
         if (stat === 'moneyBonus' && e.allMoneyMultiplier && e.allMoneyMultiplier > 1) {
-          pushMult(`🌟 ${node.name} (× all money)`, e.allMoneyMultiplier);
+          pushMult(`🌟 ${node.name} (Ascension Node - Money Multiplier)`, e.allMoneyMultiplier);
         }
         if (stat === 'rockDamageBonus' && e.allDamageMultiplier && e.allDamageMultiplier > 1) {
-          pushMult(`🌟 ${node.name} (× all damage)`, e.allDamageMultiplier);
+          pushMult(`🌟 ${node.name} (Ascension Node - Damage Multiplier)`, e.allDamageMultiplier);
         }
         if (stat === 'clickSpeedBonus' && e.allClickSpeedMultiplier && e.allClickSpeedMultiplier > 1) {
-          pushMult(`🌟 ${node.name} (× all click speed)`, e.allClickSpeedMultiplier);
+          pushMult(`🌟 ${node.name} (Ascension Node - Speed Multiplier)`, e.allClickSpeedMultiplier);
         }
       }
 
       const promoLuck = gameState.promoPermanentBonuses?.luckBonus || 0;
       const promoDrop = gameState.promoPermanentBonuses?.dropChanceBonus || 0;
-      if (stat === 'couponBonus' && promoLuck) pushAdd('🎁 Promo (luck → lottery)', promoLuck);
-      if (stat === 'luckBonus' && promoLuck) pushAdd('🎁 Promo permanent luck', promoLuck);
-      if (stat === 'dropChanceBonus' && promoDrop) pushAdd('🎁 Promo permanent drops', promoDrop);
+      if (stat === 'couponBonus' && promoLuck) pushAdd('🎁 Promo (Promotional Code - Lottery)', promoLuck);
+      if (stat === 'luckBonus' && promoLuck) pushAdd('🎁 Promo (Promotional Code - Luck)', promoLuck);
+      if (stat === 'dropChanceBonus' && promoDrop) pushAdd('🎁 Promo (Promotional Code - Drops)', promoDrop);
 
       if (gameState.hasD1PlayerPack && gameState.currentPickaxeId === D1_PICKAXE_ID) {
-        pushBonusFieldScale('🎮 D1 player pack + D1 pickaxe equipped', 3);
+        pushBonusFieldScale('🎮 D1 player pack + D1 pickaxe equipped (Premium Product Bundle)', 3);
       }
 
       return entries;

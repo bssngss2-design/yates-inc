@@ -4,19 +4,21 @@ import { useState } from 'react';
 import Image from 'next/image';
 import { useGame } from '@/contexts/GameContext';
 import { BUILDINGS } from '@/types/game';
-import TempleModal from './TempleModal';
 import WizardTowerSidebar from './WizardTowerSidebar';
 import BankModal from './BankModal';
 
 export default function BuildingDisplay() {
   const { gameState } = useGame();
-  const [showTempleModal, setShowTempleModal] = useState(false);
   const [showWizardModal, setShowWizardModal] = useState(false);
   const [showBankModal, setShowBankModal] = useState(false);
 
   // Get all owned buildings with their counts
   // Filter out buildings that don't match the player's path
+  // Also filter out temple building from bottom bar display
   const ownedBuildings = BUILDINGS.filter(building => {
+    if (building.id === 'temple') {
+      return false;
+    }
     if (
       gameState.chosenPath !== null &&
       building.pathRestriction !== null &&
@@ -54,9 +56,6 @@ export default function BuildingDisplay() {
   if (ownedBuildings.length === 0) return null;
 
   const handleBuildingClick = (buildingId: string) => {
-    if (buildingId === 'temple' && gameState.buildings.temple.owned) {
-      setShowTempleModal(true);
-    }
     if (buildingId === 'wizard_tower' && gameState.buildings.wizard_tower.owned) {
       setShowWizardModal(true);
     }
@@ -66,7 +65,7 @@ export default function BuildingDisplay() {
   };
 
   // Buildings that have management modals
-  const clickableBuildings = ['temple', 'wizard_tower', 'bank'];
+  const clickableBuildings = ['wizard_tower', 'bank'];
 
   return (
     <>
@@ -152,11 +151,6 @@ export default function BuildingDisplay() {
           );
         })}
       </div>
-
-      {/* Temple Modal */}
-      {showTempleModal && (
-        <TempleModal onClose={() => setShowTempleModal(false)} />
-      )}
 
       {/* Wizard Tower Sidebar */}
       <WizardTowerSidebar 

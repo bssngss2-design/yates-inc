@@ -198,6 +198,7 @@ interface GameContextType {
   giveAllTrinketsAndRelics: () => void;
   // Title functions
   giveTitle: (titleId: string) => boolean;
+  giveAllTitles: () => void;
   equipTitle: (titleId: string) => boolean;
   unequipTitle: (titleId: string) => void;
   ownsTitle: (titleId: string) => boolean;
@@ -4593,6 +4594,14 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     }));
   }, []);
 
+  const giveAllTitles = useCallback(() => {
+    const allTitleIds = TITLES.map(t => t.id);
+    setGameState(prev => ({
+      ...prev,
+      ownedTitleIds: [...new Set([...(prev.ownedTitleIds || []), ...allTitleIds])],
+    }));
+  }, []);
+
   // Calculate bonuses from equipped titles
   const getTitleBonuses = useCallback(() => {
     const bonuses = {
@@ -6570,6 +6579,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         giveAllTrinketsAndRelics,
         // Title functions
         giveTitle,
+        giveAllTitles,
         equipTitle,
         unequipTitle,
         ownsTitle,

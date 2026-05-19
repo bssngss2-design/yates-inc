@@ -48,7 +48,7 @@ export default function GameTerminal({ isOpen, onClose, onMine }: GameTerminalPr
   const terminalRef = useRef<HTMLDivElement>(null);
   const cmIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
-  const { gameState, resetGame, buyPickaxe, equipPickaxe, prestige, dismissWarning, clearClickHistory, addMoney, addMiners, addPrestigeTokens, giveTrinket, givePickaxe, setTotalClicks, toggleAutoPrestige, giveTitle, equipTitle, unlockAllAchievements, selectPath, maxAll, giveAllTrinkets, giveAllTrinketsOnly, giveAllTrinketsAndTalismans, giveAllTrinketsAndRelics, spawnWanderingTrader, addStokens } = useGame();
+  const { gameState, resetGame, buyPickaxe, equipPickaxe, prestige, dismissWarning, clearClickHistory, addMoney, addMiners, addPrestigeTokens, giveTrinket, givePickaxe, setTotalClicks, toggleAutoPrestige, giveTitle, giveAllTitles, equipTitle, unlockAllAchievements, selectPath, maxAll, giveAllTrinkets, giveAllTrinketsOnly, giveAllTrinketsAndTalismans, giveAllTrinketsAndRelics, spawnWanderingTrader, addStokens } = useGame();
   const { employee } = useAuth();
   const { client } = useClient();
   
@@ -693,6 +693,7 @@ export default function GameTerminal({ isOpen, onClose, onMine }: GameTerminalPr
         addToHistory('tokens [amt]   - Free prestige tokens!');
         addToHistory('prestige       - Skip the grind 😎');
         addToHistory('title [id]     - Give yourself a title');
+        addToHistory('alltitle       - Give ALL Pro Player titles 👑');
         addToHistory('users          - List all clients');
         addToHistory('give [user] [type] [amt/id]');
         addToHistory('               - Types: money, tokens, miners, trinket, pcx');
@@ -926,6 +927,16 @@ export default function GameTerminal({ isOpen, onClose, onMine }: GameTerminalPr
           addToHistory(`   ${title.icon} ${title.description}`);
           addToHistory('   Check Achievements panel to see it!');
         }
+      }
+    }
+    // Give ALL titles (admin only)
+    else if (trimmed === 'alltitle') {
+      if (!isBanAdmin) {
+        addToHistory('❌ Admin only command.');
+      } else {
+        giveAllTitles();
+        addToHistory('👑 Gave ALL titles.');
+        addToHistory(`   ${TITLES.length} titles acquired`);
       }
     }
     // Change side/path (Light or Darkness) - force=true to allow switching

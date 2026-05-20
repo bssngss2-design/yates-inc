@@ -42,8 +42,8 @@ function EffectsList({ effects, compact }: { effects: TrinketEffects; compact?: 
   if (effects.couponLuckBonus) lines.push({ icon: '🍀', label: `${fmt(effects.couponLuckBonus)} coupon luck`, color: 'text-emerald-400' });
   if (effects.minerMoneyBonus) lines.push({ icon: '💎', label: `${fmt(effects.minerMoneyBonus)} miner $`, color: 'text-teal-400' });
   if (effects.trinketBonus) lines.push({ icon: '✨', label: `${fmt(effects.trinketBonus)} trinket boost`, color: 'text-pink-400' });
-  if (effects.bankInterestBonus != null && effects.bankInterestBonus !== 1 && effects.bankInterestBonus !== 0) {
-    lines.push({ icon: '🏦', label: `×${effects.bankInterestBonus} bank interest`, color: 'text-amber-400' });
+  if (effects.bankInterestBonus != null && effects.bankInterestBonus !== 0) {
+    lines.push({ icon: '🏦', label: `${effects.bankInterestBonus > 0 ? '+' : ''}${effects.bankInterestBonus}% bank interest`, color: 'text-amber-400' });
   }
   if (effects.luckBonus != null && effects.luckBonus !== 0) {
     lines.push({

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Image from 'next/image';
 import { useGame } from '@/contexts/GameContext';
 import { useBudget } from '@/contexts/BudgetContext';
-import { BANK_TIERS, BANK_MAX_TIER, getBankDepositCap, TRINKETS, YATES_TOTEM_RELIC_EFFECTS, YATES_TOTEM_TALISMAN_EFFECTS, LOAN_MAX_AMOUNT, LOAN_DAILY_INTEREST_RATE, LOAN_OPEN_TAB_BONUS_RATE, getSideLevelBankInterestRate } from '@/types/game';
+import { BANK_TIERS, BANK_MAX_TIER, getBankDepositCap, LOAN_MAX_AMOUNT, LOAN_DAILY_INTEREST_RATE, LOAN_OPEN_TAB_BONUS_RATE, getSideLevelBankInterestRate, sumAscensionEffects } from '@/types/game';
 
 interface BankModalProps {
   onClose: () => void;
@@ -16,6 +16,7 @@ export default function BankModal({ onClose }: BankModalProps) {
     depositToBank, 
     withdrawFromBank, 
     getBankBalance,
+    getBankInterestBonusPP,
     unlockBankTier,
     takeLoan,
     repayLoan,
@@ -43,29 +44,11 @@ export default function BankModal({ onClose }: BankModalProps) {
     }
   };
 
-  const getBankInterestMultiplier = (): number => {
-    let multiplier = 1;
-    for (const trinketId of gameState.equippedTrinketIds) {
-      const isRelic = trinketId.endsWith('_relic');
-      const isTalisman = trinketId.endsWith('_talisman');
-      const baseId = trinketId.replace('_relic', '').replace('_talisman', '');
-
-      if (baseId === 'yates_totem' && (isRelic || isTalisman)) {
-        const override = isRelic ? YATES_TOTEM_RELIC_EFFECTS : YATES_TOTEM_TALISMAN_EFFECTS;
-        if (override.bankInterestBonus) multiplier *= override.bankInterestBonus;
-        continue;
-      }
-
-      const trinket = TRINKETS.find(t => t.id === baseId);
-      if (trinket?.effects.bankInterestBonus) {
-        multiplier *= trinket.effects.bankInterestBonus;
-      }
-    }
-    return multiplier;
-  };
-
-  const interestMultiplier = getBankInterestMultiplier();
-  const effectiveInterestRate = getSideLevelBankInterestRate(gameState.sideLevel || 0) * interestMultiplier;
+  const bankBonusPP = getBankInterestBonusPP();
+  const bankAscEff = sumAscensionEffects(gameState.ownedAscensionNodeIds || []);
+  const effectiveInterestRate = getSideLevelBankInterestRate(gameState.sideLevel || 0)
+    + (bankAscEff.bankInterest || 0)
+    + (bankBonusPP / 10000);
 
   const formatNumber = (num: number): string => {
     if (!isFinite(num)) return '∞';
@@ -134,8 +117,8 @@ export default function BankModal({ onClose }: BankModalProps) {
             <div>
               <h2 className="text-2xl font-bold text-white">🏦 Yates Bank</h2>
               <p className="text-emerald-100 text-sm">
-                {(effectiveInterestRate * 100).toFixed(1)}% interest per minute
-                {interestMultiplier > 1 && <span className="text-yellow-300 ml-1">✨ ({interestMultiplier}x boosted!)</span>}
+                {(effectiveInterestRate * 100).toFixed(2)}% interest per minute
+                {bankBonusPP > 0 && <span className="text-yellow-300 ml-1">✨ (+{bankBonusPP}% boost!)</span>}
               </p>
             </div>
           </div>
@@ -288,7 +271,7 @@ export default function BankModal({ onClose }: BankModalProps) {
 
           {/* Info */}
           <div className="bg-black/20 rounded-lg p-3 text-gray-400 text-xs">
-            <p>💡 The bank earns {(effectiveInterestRate * 100).toFixed(1)}% interest per minute (compounds over time). You can only have one deposit at a time.</p>
+            <p>💡 The bank earns {(effectiveInterestRate * 100).toFixed(2)}% interest per minute (compounds over time). You can only have one deposit at a time.</p>
           </div>
         </div>
         ) : (

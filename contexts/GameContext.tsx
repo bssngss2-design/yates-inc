@@ -245,6 +245,7 @@ interface GameContextType {
   depositToBank: (amount: number) => boolean;
   withdrawFromBank: () => { principal: number; interest: number; capped: boolean } | null;
   getBankBalance: () => { principal: number; interest: number; totalTime: number };
+  getBankInterestBonusPP: () => number;
   unlockBankTier: () => boolean;
   // Loan functions
   takeLoan: (amount: number) => boolean;
@@ -2375,6 +2376,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         debouncedSaveUserGameData({
           user_id: userId,
           user_type: userType,
+          username: employee?.name || client?.username || null,
           // Core game state
           yates_dollars: gameState.yatesDollars,
           total_clicks: gameState.totalClicks,
@@ -2465,6 +2467,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
   const buildSavePayload = (state: GameState, uid: string, utype: 'employee' | 'client') => ({
     user_id: uid,
     user_type: utype,
+    username: employee?.name || client?.username || null,
     yates_dollars: state.yatesDollars,
     total_clicks: state.totalClicks,
     current_pickaxe_id: state.currentPickaxeId,
@@ -5235,8 +5238,8 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
 
     return true;
   }, [gameState.buildings.bank, gameState.yatesDollars, gameState.equippedTrinketIds]);
-  const getBankInterestMultiplier = useCallback((): number => {
-    let multiplier = 1;
+  const getBankInterestBonusPP = useCallback((): number => {
+    let sum = 0;
     for (const trinketId of gameState.equippedTrinketIds) {
       const isRelic = trinketId.endsWith('_relic');
       const isTalisman = trinketId.endsWith('_talisman');
@@ -5247,10 +5250,10 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       const specialBankEff = getSpecialTrinketOverride(baseId, isRelic, isTalisman);
       const bankEff = specialBankEff || trinket.effects;
       if (bankEff.bankInterestBonus) {
-        multiplier *= bankEff.bankInterestBonus;
+        sum += bankEff.bankInterestBonus;
       }
     }
-    return multiplier;
+    return sum;
   }, [gameState.equippedTrinketIds]);
 
   const withdrawFromBank = useCallback((): { principal: number; interest: number; capped: boolean } | null => {
@@ -5259,13 +5262,13 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     if (!gameState.buildings.bank.depositTimestamp) return null;
 
     const principal = gameState.buildings.bank.depositAmount;
-    const interestMultiplier = getBankInterestMultiplier();
+    const bonusPP = getBankInterestBonusPP();
     const bankAscEff = sumAscensionEffects(gameState.ownedAscensionNodeIds || []);
     const interest = calculateBankInterest(
       principal,
       gameState.buildings.bank.depositTimestamp,
       Date.now(),
-      interestMultiplier,
+      bonusPP,
       gameState.sideLevel || 0,
       gameState.buildings.bank.bankActiveMinutes || 0,
       bankAscEff.bankInterest
@@ -5295,7 +5298,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     }));
 
     return { principal, interest, capped };
-  }, [gameState.buildings.bank, gameState.yatesDollars, gameState.totalMoneyEarned, getBankInterestMultiplier]);
+  }, [gameState.buildings.bank, gameState.yatesDollars, gameState.totalMoneyEarned, getBankInterestBonusPP]);
 
   const getBankBalance = useCallback((): { principal: number; interest: number; totalTime: number } => {
     if (!gameState.buildings.bank.depositTimestamp || gameState.buildings.bank.depositAmount <= 0) {
@@ -5304,12 +5307,12 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     
     const principal = gameState.buildings.bank.depositAmount;
     const totalTime = Date.now() - gameState.buildings.bank.depositTimestamp;
-    const interestMultiplier = getBankInterestMultiplier();
+    const bonusPP = getBankInterestBonusPP();
     const balAscEff = sumAscensionEffects(gameState.ownedAscensionNodeIds || []);
-    const interest = calculateBankInterest(principal, gameState.buildings.bank.depositTimestamp, Date.now(), interestMultiplier, gameState.sideLevel || 0, gameState.buildings.bank.bankActiveMinutes || 0, balAscEff.bankInterest);
+    const interest = calculateBankInterest(principal, gameState.buildings.bank.depositTimestamp, Date.now(), bonusPP, gameState.sideLevel || 0, gameState.buildings.bank.bankActiveMinutes || 0, balAscEff.bankInterest);
     
     return { principal, interest, totalTime };
-  }, [gameState.buildings.bank, gameState.ownedAscensionNodeIds, getBankInterestMultiplier]);
+  }, [gameState.buildings.bank, gameState.ownedAscensionNodeIds, getBankInterestBonusPP]);
 
   // =====================
   // LOAN FUNCTIONS
@@ -6616,6 +6619,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         depositToBank,
         withdrawFromBank,
         getBankBalance,
+        getBankInterestBonusPP,
         unlockBankTier,
         takeLoan,
         repayLoan,

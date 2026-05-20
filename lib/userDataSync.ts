@@ -3,6 +3,8 @@ import { supabase, supabaseUrl, supabaseAnonKey } from './supabase';
 export interface UserGameData {
   user_id: string;
   user_type: 'employee' | 'client';
+  /** Display name denormalized into the row so leaderboards don't need a secondary lookup. */
+  username?: string | null;
   yates_dollars: number;
   total_clicks: number;
   current_pickaxe_id: number;
@@ -230,6 +232,7 @@ export async function saveUserGameData(data: Partial<UserGameData> & { user_id: 
     const fullData = stripUndefined({
       user_id: data.user_id,
       user_type: data.user_type,
+      username: data.username,
       yates_dollars: safeBigInt(data.yates_dollars),
       total_clicks: safeBigInt(data.total_clicks),
       current_pickaxe_id: data.current_pickaxe_id,
@@ -616,6 +619,7 @@ export function keepaliveSave(data: Partial<UserGameData> & { user_id: string; u
   const fullData = stripUndefined({
     user_id: data.user_id,
     user_type: data.user_type,
+    username: data.username,
     yates_dollars: safeBigInt(data.yates_dollars),
     total_clicks: safeBigInt(data.total_clicks),
     current_pickaxe_id: data.current_pickaxe_id,

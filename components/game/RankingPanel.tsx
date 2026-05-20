@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '@/lib/supabase';
+import { employees as STATIC_EMPLOYEES } from '@/utils/products';
 
 interface RankingEntry {
   user_id: string;
@@ -75,7 +76,7 @@ export default function RankingPanel({ isOpen, onClose, isHardMode = false }: Ra
 
       let query = supabase
         .from(tableName)
-        .select('user_id, user_type, total_money_earned, fastest_prestige_time, prestige_count')
+        .select('user_id, user_type, username, total_money_earned, fastest_prestige_time, prestige_count')
         .limit(5);
 
       switch (category) {
@@ -96,6 +97,7 @@ export default function RankingPanel({ isOpen, onClose, isHardMode = false }: Ra
           break;
       }
 
+      // #region agent log - filtered query result
       const { data, error } = await query;
 
       if (error) {
@@ -109,25 +111,78 @@ export default function RankingPanel({ isOpen, onClose, isHardMode = false }: Ra
         return;
       }
 
-      // Batch username lookups by user_type to reduce queries
-      const clientIds = data.filter(e => e.user_type === 'client').map(e => e.user_id);
-      const empIds = data.filter(e => e.user_type !== 'client').map(e => e.user_id);
+      // Seed the name map with denormalized usernames from the game-data row.
+      // Anything still missing falls through to secondary lookups below.
       const usernameMap: Record<string, string> = {};
+      for (const row of data) {
+        if (row.username) usernameMap[row.user_id] = row.username as string;
+      }
+
+      const missing = data.filter(e => !usernameMap[e.user_id]);
+      const clientIds = missing.filter(e => e.user_type === 'client').map(e => e.user_id);
+      const empIds = missing.filter(e => e.user_type !== 'client').map(e => e.user_id);
 
       if (clientIds.length > 0) {
-        const { data: clients } = await supabase
+        const { data: clients, error: clientsErr } = await supabase
           .from('clients')
           .select('id, username')
           .in('id', clientIds);
-        clients?.forEach(c => { usernameMap[c.id] = c.username || 'Unknown'; });
+        if (clientsErr) {
+          console.warn('Rankings: clients lookup failed (RLS or schema mismatch?):', clientsErr.message);
+        }
+        clients?.forEach(c => {
+          if (c.username) usernameMap[c.id] = c.username;
+        });
+
+        // Fallback for clients: check user_presence if clients lookup failed or returned empty
+        const stillMissingClients = clientIds.filter(id => !usernameMap[id]);
+        if (stillMissingClients.length > 0) {
+          const { data: presence, error: presenceErr } = await supabase
+            .from('user_presence')
+            .select('user_id, username')
+            .in('user_id', stillMissingClients);
+          if (presenceErr) {
+            console.warn('Rankings: user_presence lookup failed:', presenceErr.message);
+          }
+          presence?.forEach(p => {
+            if (p.username && p.user_id) usernameMap[p.user_id] = p.username;
+          });
+        }
       }
 
       if (empIds.length > 0) {
-        const { data: emps } = await supabase
+        const { data: emps, error: empsErr } = await supabase
           .from('employees')
           .select('id, name')
           .in('id', empIds);
-        emps?.forEach(e => { usernameMap[e.id] = e.name || 'Unknown'; });
+        if (empsErr) {
+          console.warn('Rankings: employees lookup failed (RLS or schema mismatch?):', empsErr.message);
+        }
+        emps?.forEach(e => {
+          if (e.name) usernameMap[e.id] = e.name;
+        });
+
+        // Fallback A: admin_hired_employees (hired admins are NOT inserted into employees).
+        const stillMissingEmp = empIds.filter(id => !usernameMap[id]);
+        if (stillMissingEmp.length > 0) {
+          const { data: hired, error: hiredErr } = await supabase
+            .from('admin_hired_employees')
+            .select('employee_id, name')
+            .in('employee_id', stillMissingEmp);
+          if (hiredErr) {
+            console.warn('Rankings: admin_hired_employees lookup failed:', hiredErr.message);
+          }
+          hired?.forEach(h => {
+            if (h.name) usernameMap[h.employee_id] = h.name;
+          });
+        }
+
+        // Fallback B: static roster (Nesh / Wyatt / Suhas etc. live only in code).
+        for (const id of empIds) {
+          if (usernameMap[id]) continue;
+          const staticHit = STATIC_EMPLOYEES.find(e => e.id === id);
+          if (staticHit?.name) usernameMap[id] = staticHit.name;
+        }
       }
 
       const rankingsWithNames: RankingEntry[] = data.map(entry => ({
@@ -140,6 +195,7 @@ export default function RankingPanel({ isOpen, onClose, isHardMode = false }: Ra
 
       setRankings(rankingsWithNames);
       setLastUpdated(new Date());
+      // #endregion
     } catch (err) {
       console.error('Failed to fetch rankings:', err);
       setRankings([]);

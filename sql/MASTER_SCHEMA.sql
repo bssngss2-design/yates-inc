@@ -12,6 +12,7 @@
 --   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
 --   user_id TEXT NOT NULL UNIQUE,
 --   user_type TEXT NOT NULL CHECK (user_type IN ('employee', 'client')),
+--   username TEXT,                          -- Display name (denormalized from clients/employees for leaderboards)
 --
 --   -- Core game state
 --   yates_dollars NUMERIC(24,2) DEFAULT 0,
@@ -120,3 +121,6 @@
 -- COLUMNS ADDED BY THIS AUDIT (previously missing from SQL):
 --   owned_relic_ids, owned_talisman_ids, owned_premium_product_ids,
 --   buildings_data, stokens, lottery_tickets
+--
+-- COLUMNS ADDED FOR LEADERBOARD NAMES (sql/ADD_USERNAME_TO_USER_GAME_DATA.sql):
+--   username (denormalized display name; backfilled from clients/employees/admin_hired_employees)

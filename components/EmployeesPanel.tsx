@@ -312,13 +312,15 @@ export default function EmployeesPanel({ isOpen, onClose }: EmployeesPanelProps)
     // Game-data rows that aren't in clients/employees yet (orphans — still
     // useful so we don't hide actively-playing accounts)
     const knownIds = new Set(out.map((u) => u.id));
+    const presenceByUserId = new Map(presenceRows.map((p) => [p.user_id, p.username]));
     gameRows.forEach((g) => {
       if (knownIds.has(g.user_id)) return;
       const ban = banById.get(g.user_id);
+      const presenceName = presenceByUserId.get(g.user_id);
       out.push({
         id: g.user_id,
         type: g.user_type,
-        name: ban?.username || `(unnamed ${g.user_type})`,
+        name: ban?.username || presenceName || `(unnamed ${g.user_type})`,
         joinedAt: g.created_at,
         money: Number(g.yates_dollars ?? 0),
         warnings: g.anti_cheat_warnings ?? 0,
@@ -335,7 +337,7 @@ export default function EmployeesPanel({ isOpen, onClose }: EmployeesPanelProps)
     });
 
     return out;
-  }, [gameRows, clientRows, bannedRows, historyRows, hired, fired]);
+  }, [gameRows, clientRows, bannedRows, historyRows, hired, fired, presenceRows]);
 
   const filteredUsers = useMemo(() => {
     const q = search.trim().toLowerCase();

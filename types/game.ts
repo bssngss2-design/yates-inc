@@ -624,7 +624,7 @@ export interface TrinketEffects {
   allBonus?: number;          // % bonus to everything
   prestigeProtection?: boolean; // Keep money on prestige (consumable)
   trinketBonus?: number;      // % boost to all trinket effects
-  bankInterestBonus?: number; // Multiplier for bank interest (e.g., 10 = 10x = 1% instead of 0.1%)
+  bankInterestBonus?: number; // Additive % points per minute added to bank interest rate (e.g., 10 = +10% rate, stacks summed across equipped trinkets)
 }
 
 export interface Trinket {
@@ -697,9 +697,9 @@ export const TRINKETS: Trinket[] = [
       minerDamageBonus: 2.5,
       clickSpeedBonus: 2.5,
       couponLuckBonus: 2.5,
-      bankInterestBonus: 2, // +1 point = 2x multiplier
+      bankInterestBonus: 10, // +10% bank interest rate (additive pp)
     },
-    description: '+250% EVERYTHING + 1pt bank interest - The ultimate trinket',
+    description: '+250% EVERYTHING + 10% bank interest - The ultimate trinket',
   },
   {
     id: 'spike',
@@ -879,9 +879,9 @@ export const TRINKETS: Trinket[] = [
       moneyBonus: 1.0,           // +100% money
       clickSpeedBonus: 1.0,      // +100% click speed
       allBonus: 1.0,             // +100% all (buildings get special treatment in-game)
-      bankInterestBonus: 10,     // 10x bank interest (0.1% -> 1%)
+      bankInterestBonus: 20,     // +20% bank interest rate (additive pp)
     },
-    description: '+100% money, click speed, buildings mega buffed! (Bank 1% interest, Factory +30% faster +15 miners, Mine 30 miners & 40% boost)',
+    description: '+100% money, click speed, buildings mega buffed! (+20% bank interest, Factory +30% faster +15 miners, Mine 30 miners & 40% boost)',
   },
   {
     id: 'fortunes_gambit',
@@ -999,7 +999,7 @@ export const YATES_TOTEM_RELIC_EFFECTS: TrinketEffects = {
   minerDamageBonus: 3.2,
   clickSpeedBonus: 3.2,
   couponLuckBonus: 3.2,
-  bankInterestBonus: 2.2,   // +1.2 points = 2.2x
+  bankInterestBonus: 12,    // +12% bank interest rate (additive pp)
 };
 
 export const YATES_TOTEM_TALISMAN_EFFECTS: TrinketEffects = {
@@ -1009,7 +1009,7 @@ export const YATES_TOTEM_TALISMAN_EFFECTS: TrinketEffects = {
   minerDamageBonus: 4.0,
   clickSpeedBonus: 4.0,
   couponLuckBonus: 4.0,
-  bankInterestBonus: 2.5,   // +1.5 points = 2.5x
+  bankInterestBonus: 15,    // +15% bank interest rate (additive pp)
 };
 
 // Arghtfavts Trophy relic/talisman overrides (money, click, dmg, minerDmg, minerSpd)
@@ -1031,14 +1031,14 @@ export const GOLDEN_TROPHY_RELIC_EFFECTS: TrinketEffects = {
 // Void Merchant's Pact relic/talisman overrides
 export const VOID_MERCHANT_RELIC_EFFECTS: TrinketEffects = {
   allBonus: 2.0,
-  bankInterestBonus: 119,
+  bankInterestBonus: 25, // +25% bank interest rate (additive pp)
   luckBonus: -7,
   dropChanceBonus: -7,
   shopPriceBonus: 0.19,
 };
 export const VOID_MERCHANT_TALISMAN_EFFECTS: TrinketEffects = {
   allBonus: 2.8,
-  bankInterestBonus: 119,
+  bankInterestBonus: 35, // +35% bank interest rate (additive pp)
   luckBonus: -4,
   dropChanceBonus: -4,
   shopPriceBonus: 0.15,
@@ -1104,8 +1104,8 @@ export function summarizeTrinketEffectsParts(effects: TrinketEffects): string[] 
   if (effects.couponLuckBonus) addPct('coupon luck', effects.couponLuckBonus);
   if (effects.minerMoneyBonus) addPct('miner $', effects.minerMoneyBonus);
   if (effects.trinketBonus) addPct('trinket boost', effects.trinketBonus);
-  if (effects.bankInterestBonus != null && effects.bankInterestBonus !== 0 && effects.bankInterestBonus !== 1) {
-    parts.push(`×${effects.bankInterestBonus} bank interest`);
+  if (effects.bankInterestBonus != null && effects.bankInterestBonus !== 0) {
+    parts.push(`${effects.bankInterestBonus > 0 ? '+' : ''}${effects.bankInterestBonus}% bank interest`);
   }
   if (effects.luckBonus != null && effects.luckBonus !== 0) {
     parts.push(`${effects.luckBonus > 0 ? '+' : ''}${effects.luckBonus} luck`);
@@ -3311,10 +3311,11 @@ export function getMineEfficiencyBonus(mineCount: number): number {
 
 // Calculate bank interest based on active play time (only accrues while tab is open)
 // bankActiveMinutes: cumulative minutes the tab was open while deposit exists
-export function calculateBankInterest(depositAmount: number, depositTimestamp: number, now: number, interestMultiplier: number = 1, sideLevel: number = 0, bankActiveMinutes: number = 0, ascensionInterestBonus: number = 0): number {
+// bonusPP: additive % points per minute summed across equipped trinkets (e.g., 10 = +10% rate -> 0.10 added to a base of 0.001? No: 10/10000 = 0.001 added so 0.1% -> 0.2%).
+export function calculateBankInterest(depositAmount: number, depositTimestamp: number, now: number, bonusPP: number = 0, sideLevel: number = 0, bankActiveMinutes: number = 0, ascensionInterestBonus: number = 0): number {
   const minutesDeposited = bankActiveMinutes > 0 ? bankActiveMinutes : (now - depositTimestamp) / 60000;
   const baseRate = getSideLevelBankInterestRate(sideLevel) + ascensionInterestBonus;
-  const baseInterestRate = baseRate * interestMultiplier;
+  const baseInterestRate = baseRate + (bonusPP / 10000);
   const interestRate = baseInterestRate + (minutesDeposited * BANK_TIME_MULTIPLIER);
   return Math.floor(depositAmount * interestRate * minutesDeposited);
 }

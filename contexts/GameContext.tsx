@@ -100,6 +100,17 @@ async function addProductSaleToBudget(amount: number, productName: string): Prom
   }
 }
 
+/** Saved/remote data may store shadySamSwaps as {} instead of []. */
+function parseShadySamSwaps(raw: unknown, fallback: ShadySamSwap[] = []): ShadySamSwap[] {
+  if (raw == null) return Array.isArray(fallback) ? fallback : [];
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return Array.isArray(fallback) ? fallback : [];
+  }
+}
+
 interface GameContextType {
   gameState: GameState;
   currentPickaxe: typeof PICKAXES[0];
@@ -673,7 +684,13 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
             console.log(`🔧 Fixing HP: ${loadedState.currentRockHP} > ${maxHP}, capping to max`);
             loadedState.currentRockHP = maxHP;
           }
+<<<<<<< Updated upstream
           loadedState.ownedAscensionNodeIds = migrateOwnedAscensionNodeIds(loadedState.ownedAscensionNodeIds);
+=======
+          if (!Array.isArray(loadedState.shadySamSwaps)) {
+            loadedState.shadySamSwaps = [];
+          }
+>>>>>>> Stashed changes
           setGameState(loadedState);
 
           // Bank tier migration for localStorage-only loads (guests / Supabase offline)
@@ -962,12 +979,10 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
                 loanTakenAt: (supabaseData as unknown as { loan_taken_at?: number | null }).loan_taken_at ?? prev.loanTakenAt,
                 loanLastAccrualAt: (supabaseData as unknown as { loan_last_accrual_at?: number | null }).loan_last_accrual_at ?? prev.loanLastAccrualAt,
                 // Shady Sam
-                shadySamSwaps: (() => {
-                  try {
-                    const raw = (supabaseData as unknown as { shady_sam_swaps?: string }).shady_sam_swaps;
-                    return raw ? JSON.parse(raw) : prev.shadySamSwaps;
-                  } catch { return prev.shadySamSwaps; }
-                })(),
+                shadySamSwaps: parseShadySamSwaps(
+                  (supabaseData as unknown as { shady_sam_swaps?: unknown }).shady_sam_swaps,
+                  prev.shadySamSwaps,
+                ),
                 // Playtime tracking (use max to never lose playtime)
                 totalPlaytimeSeconds: Math.max(
                   prev.totalPlaytimeSeconds || 0,
@@ -2264,7 +2279,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
       moneyMultiplier: 'moneyBonus',
       minerDamage: 'minerDamageBonus',
     };
-    for (const swap of (gameState.shadySamSwaps || [])) {
+    for (const swap of parseShadySamSwaps(gameState.shadySamSwaps)) {
       const debuffKey = samStatMap[swap.debuffStat];
       const buffKey = samStatMap[swap.buffStat];
       if (debuffKey && buffKey) {
@@ -4887,7 +4902,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
     setGameState(prev => ({
       ...prev,
       yatesDollars: prev.yatesDollars - cost,
-      shadySamSwaps: [...prev.shadySamSwaps, swap],
+      shadySamSwaps: [...parseShadySamSwaps(prev.shadySamSwaps), swap],
     }));
 
     return true;
@@ -4896,7 +4911,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
   const removeShadySamSwap = useCallback((swapId: string): void => {
     setGameState(prev => ({
       ...prev,
-      shadySamSwaps: prev.shadySamSwaps.filter(s => s.id !== swapId),
+      shadySamSwaps: parseShadySamSwaps(prev.shadySamSwaps).filter(s => s.id !== swapId),
     }));
   }, []);
 

@@ -1,121 +1,64 @@
 -- =============================================
--- OPTIONAL: Populate rankings table from current game data
+-- POPULATE: Rankings table from current game data
 --
--- This is OPTIONAL - the app uses denormalized stats in user_game_data
--- for leaderboards and doesn't read from the rankings table.
--- 
--- Use this if you want historical period snapshots for reporting.
+-- This populates the rankings table with data from user_game_data
+-- for the current active ranking period.
 -- =============================================
 
--- 1. Verify rankings period structure exists
-SELECT COUNT(*) as ranking_periods_count FROM ranking_periods;
-SELECT COUNT(*) as rankings_rows FROM rankings;
-
--- 2. If no period exists, create current week's period
--- (Run this if ranking_periods is empty)
-INSERT INTO ranking_periods (period_name, start_date, end_date, is_active)
-VALUES (
-  'Week of ' || TO_CHAR(CURRENT_DATE - INTERVAL '1 day' * EXTRACT(DOW FROM CURRENT_DATE)::int, 'YYYY-MM-DD'),
-  CURRENT_DATE - INTERVAL '1 day' * EXTRACT(DOW FROM CURRENT_DATE)::int,
-  CURRENT_DATE - INTERVAL '1 day' * EXTRACT(DOW FROM CURRENT_DATE)::int + INTERVAL '6 days',
-  true
-)
-ON CONFLICT DO NOTHING;
-
--- 3. Get the current active period
+-- 1. Get or create current ranking period
 WITH current_period AS (
-  SELECT id as period_id FROM ranking_periods WHERE is_active = true ORDER BY start_date DESC LIMIT 1
+  SELECT id, period_start, period_end FROM ranking_periods WHERE is_active = true ORDER BY period_start DESC LIMIT 1
+),
+-- If no period exists, create one (3-day period from now)
+ensure_period AS (
+  INSERT INTO ranking_periods (period_start, period_end, is_active)
+  SELECT NOW(), NOW() + INTERVAL '3 days', true
+  WHERE NOT EXISTS (SELECT 1 FROM ranking_periods WHERE is_active = true)
+  RETURNING id, period_start, period_end
+),
+-- Use existing period or newly created one
+active_period AS (
+  SELECT id as period_id, period_start, period_end FROM current_period
+  UNION ALL
+  SELECT id as period_id, period_start, period_end FROM ensure_period
+  WHERE NOT EXISTS (SELECT 1 FROM current_period)
 )
 
--- 4. Populate rankings table from user_game_data (Money category)
+-- 2. Populate rankings from user_game_data
 INSERT INTO rankings (
-  period_id,
   user_id,
   user_type,
   username,
-  category,
-  rank,
-  score,
-  updated_at
+  total_money_earned,
+  fastest_prestige_time,
+  total_prestiges,
+  period_start,
+  period_end
 )
 SELECT 
-  cp.period_id,
   ugd.user_id,
   ugd.user_type,
   ugd.username,
-  'money',
-  ROW_NUMBER() OVER (ORDER BY ugd.total_money_earned DESC) as rank,
-  ugd.total_money_earned as score,
-  NOW()
-FROM user_game_data ugd, current_period cp
-WHERE ugd.total_money_earned > 0
-  AND ugd.username IS NOT NULL
-ON CONFLICT (period_id, user_id, category) DO UPDATE SET
-  rank = EXCLUDED.rank,
-  score = EXCLUDED.score,
+  ugd.total_money_earned,
+  ugd.fastest_prestige_time,
+  ugd.prestige_count,
+  ap.period_start,
+  ap.period_end
+FROM user_game_data ugd
+CROSS JOIN (SELECT DISTINCT period_start, period_end FROM active_period LIMIT 1) ap
+WHERE ugd.username IS NOT NULL
+  AND (ugd.total_money_earned > 0 OR ugd.fastest_prestige_time IS NOT NULL OR ugd.prestige_count > 0)
+ON CONFLICT (user_id, period_start) DO UPDATE SET
+  total_money_earned = EXCLUDED.total_money_earned,
+  fastest_prestige_time = EXCLUDED.fastest_prestige_time,
+  total_prestiges = EXCLUDED.total_prestiges,
   updated_at = NOW();
 
--- 5. Populate rankings table from user_game_data (Speed/Prestige Time category)
-INSERT INTO rankings (
-  period_id,
-  user_id,
-  user_type,
-  username,
-  category,
-  rank,
-  score,
-  updated_at
-)
+-- 3. Verify results
 SELECT 
-  cp.period_id,
-  ugd.user_id,
-  ugd.user_type,
-  ugd.username,
-  'speed',
-  ROW_NUMBER() OVER (ORDER BY ugd.fastest_prestige_time ASC) as rank,
-  ugd.fastest_prestige_time as score,
-  NOW()
-FROM user_game_data ugd, current_period cp
-WHERE ugd.fastest_prestige_time IS NOT NULL
-  AND ugd.fastest_prestige_time > 0
-  AND ugd.username IS NOT NULL
-ON CONFLICT (period_id, user_id, category) DO UPDATE SET
-  rank = EXCLUDED.rank,
-  score = EXCLUDED.score,
-  updated_at = NOW();
-
--- 6. Populate rankings table from user_game_data (Prestige Count category)
-INSERT INTO rankings (
-  period_id,
-  user_id,
-  user_type,
-  username,
-  category,
-  rank,
-  score,
-  updated_at
-)
-SELECT 
-  cp.period_id,
-  ugd.user_id,
-  ugd.user_type,
-  ugd.username,
-  'prestiges',
-  ROW_NUMBER() OVER (ORDER BY ugd.prestige_count DESC) as rank,
-  ugd.prestige_count as score,
-  NOW()
-FROM user_game_data ugd, current_period cp
-WHERE ugd.prestige_count > 0
-  AND ugd.username IS NOT NULL
-ON CONFLICT (period_id, user_id, category) DO UPDATE SET
-  rank = EXCLUDED.rank,
-  score = EXCLUDED.score,
-  updated_at = NOW();
-
--- 7. Verify results
-SELECT 
-  category,
-  COUNT(*) as ranking_count,
-  MAX(rank) as max_rank
-FROM rankings
-GROUP BY category;
+  'Rankings populated' as status,
+  COUNT(*) as total_users,
+  COUNT(CASE WHEN total_money_earned > 0 THEN 1 END) as users_with_money,
+  COUNT(CASE WHEN fastest_prestige_time IS NOT NULL THEN 1 END) as users_with_speed,
+  COUNT(CASE WHEN total_prestiges > 0 THEN 1 END) as users_with_prestiges
+FROM rankings;

@@ -71,6 +71,7 @@ const ACTIVE_WINDOW_MS = 60_000; // anyone whose last_seen ping was within 60s
 interface UserGameRow {
   user_id: string;
   user_type: 'employee' | 'client';
+  username: string | null;
   yates_dollars: number | null;
   anti_cheat_warnings: number | null;
   is_on_watchlist: boolean | null;
@@ -180,7 +181,7 @@ export default function EmployeesPanel({ isOpen, onClose }: EmployeesPanelProps)
         supabase
           .from('user_game_data')
           .select(
-            'user_id, user_type, yates_dollars, anti_cheat_warnings, is_on_watchlist, is_blocked, total_playtime_seconds, has_autoclicker, created_at',
+            'user_id, user_type, username, yates_dollars, anti_cheat_warnings, is_on_watchlist, is_blocked, total_playtime_seconds, has_autoclicker, created_at',
           ),
         supabase.from('clients').select('id, username, mail_handle, created_at'),
         supabase.from('banned_users').select('user_id, username, ban_reason, banned_at, banned_by'),
@@ -317,10 +318,12 @@ export default function EmployeesPanel({ isOpen, onClose }: EmployeesPanelProps)
       if (knownIds.has(g.user_id)) return;
       const ban = banById.get(g.user_id);
       const presenceName = presenceByUserId.get(g.user_id);
+      // Priority: ban.username > game_data.username > presence.username > generic fallback
+      const displayName = ban?.username || g.username || presenceName || `(unnamed ${g.user_type})`;
       out.push({
         id: g.user_id,
         type: g.user_type,
-        name: ban?.username || presenceName || `(unnamed ${g.user_type})`,
+        name: displayName,
         joinedAt: g.created_at,
         money: Number(g.yates_dollars ?? 0),
         warnings: g.anti_cheat_warnings ?? 0,

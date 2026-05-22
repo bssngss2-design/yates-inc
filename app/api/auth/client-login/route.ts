@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { hashClientPassword, isBcryptHash, verifyClientPassword } from '@/lib/clientPassword';
 
+const MIGRATED_PASSWORD_PLACEHOLDER = '[MIGRATED - PASSWORD RESET REQUIRED]';
+
 export async function POST(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -27,6 +29,17 @@ export async function POST(request: NextRequest) {
 
     if (error || !client) {
       return NextResponse.json({ success: false, error: 'Account not found. Check your username or create a new one!' });
+    }
+
+    // NEW: Detect migrated accounts that need password reset
+    if (client.password === MIGRATED_PASSWORD_PLACEHOLDER) {
+      return NextResponse.json({
+        success: false,
+        error: 'needs_password_reset',
+        message: 'Your account was recovered from our database backup. Please set a new password to continue.',
+        userId: client.id,
+        username: client.username,
+      });
     }
 
     if (client.password) {

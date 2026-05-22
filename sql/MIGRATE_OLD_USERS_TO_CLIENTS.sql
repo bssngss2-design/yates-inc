@@ -29,15 +29,34 @@ WITH orphan_clients AS (
       -- Skip if already in clients
       SELECT 1 FROM clients c WHERE c.id = ugd.user_id::uuid
     )
+),
+-- Filter out usernames that already exist in clients table
+unique_orphans AS (
+  SELECT 
+    oc.user_id,
+    oc.display_username,
+    oc.mail_handle,
+    oc.created_at,
+    CASE 
+      WHEN EXISTS (SELECT 1 FROM clients c WHERE c.username = oc.display_username)
+      THEN oc.display_username || '_' || LEFT(oc.user_id::text, 8)
+      ELSE oc.display_username
+    END as final_username,
+    CASE
+      WHEN EXISTS (SELECT 1 FROM clients c WHERE c.username = oc.display_username)
+      THEN oc.mail_handle || '_' || LEFT(oc.user_id::text, 8)
+      ELSE oc.mail_handle
+    END as final_mail_handle
+  FROM orphan_clients oc
 )
 INSERT INTO clients (id, username, mail_handle, password, created_at)
 SELECT 
-  orphan_clients.user_id::uuid,
-  orphan_clients.display_username,
-  orphan_clients.mail_handle,
+  unique_orphans.user_id::uuid,
+  unique_orphans.final_username,
+  unique_orphans.final_mail_handle,
   '[MIGRATED - PASSWORD RESET REQUIRED]',  -- Placeholder: user must reset password on next login
-  orphan_clients.created_at
-FROM orphan_clients
+  unique_orphans.created_at
+FROM unique_orphans
 ON CONFLICT (id) DO NOTHING;  -- Safe if run multiple times
 
 -- 2. Update user_game_data with denormalized usernames where missing

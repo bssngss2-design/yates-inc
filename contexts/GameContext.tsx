@@ -34,7 +34,7 @@ import {
   BANK_TIERS, BANK_MAX_TIER, getBankDepositCap, getBankTierForAmount,
   TEMPLE_MINER_MONEY_MULTIPLIER, TEMPLE_BUFF_INTERVAL_MIN, TEMPLE_BUFF_INTERVAL_MAX,
   getProgressiveUpgradeCost, getProgressiveUpgradeBonus, sumProgressiveUpgradeBonuses,
-  generateShipmentDelivery, getShipmentDeliveryName, EXOTIC_ROCKS, ASCENSION_NODES, AscensionNode, sumAscensionEffects, migrateOwnedAscensionNodeIds, COMBINED_PATH_TITLES, getSpecialTrinketOverride,
+  generateShipmentDelivery, getShipmentDeliveryName, EXOTIC_ROCKS, ASCENSION_NODES, AscensionNode, sumAscensionEffects, migrateOwnedAscensionNodeIds, COMBINED_PATH_TITLES, getSpecialTrinketOverride, YATES_DOLLARS_PER_HEAVENLY_CHIP,
   // Wandering Trader system
   WanderingTraderOffer, RouletteResult,
   WANDERING_TRADER_DURATION, 
@@ -684,13 +684,8 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
             console.log(`🔧 Fixing HP: ${loadedState.currentRockHP} > ${maxHP}, capping to max`);
             loadedState.currentRockHP = maxHP;
           }
-<<<<<<< Updated upstream
           loadedState.ownedAscensionNodeIds = migrateOwnedAscensionNodeIds(loadedState.ownedAscensionNodeIds);
-=======
-          if (!Array.isArray(loadedState.shadySamSwaps)) {
-            loadedState.shadySamSwaps = [];
-          }
->>>>>>> Stashed changes
+          loadedState.shadySamSwaps = parseShadySamSwaps(loadedState.shadySamSwaps);
           setGameState(loadedState);
 
           // Bank tier migration for localStorage-only loads (guests / Supabase offline)
@@ -3437,7 +3432,7 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
         gemsAfterPrestige = 0;
       } else {
         hcEarnedThisPrestige =
-          Math.floor((gameState.gems || 0) / 25) + Math.floor(currentMoney / 1_000_000_000_000);
+          Math.floor((gameState.gems || 0) / 25) + Math.floor(currentMoney / YATES_DOLLARS_PER_HEAVENLY_CHIP);
         gemsAfterPrestige = (gameState.gems || 0) % 25;
       }
     }
@@ -3535,8 +3530,8 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
           // Gems: 25 gems = 1 HC
           hcFromGems = Math.floor((prev.gems || 0) / 25);
           newGems = (prev.gems || 0) % 25; // leftover gems
-          // Money: 1T = 1 HC
-          hcFromMoney = Math.floor(prev.yatesDollars / 1_000_000_000_000);
+          // Money: 8T = 1 HC
+          hcFromMoney = Math.floor(prev.yatesDollars / YATES_DOLLARS_PER_HEAVENLY_CHIP);
         }
       }
       const totalNewHC = hcFromGems + hcFromMoney;

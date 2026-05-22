@@ -417,7 +417,7 @@ export interface GameState {
   // =====================
   // ASCENSION TREE (prestige 10+ heavenly upgrade system)
   // =====================
-  gems: number;                              // Gems from Gem Farms (25 gems = 1 HC on prestige)
+  gems: number;                              // Gems from Gem Farms (25 gems = 1 HC on prestige, 8T$ = 1 HC from money)
   heavenlyChips: number;                     // Permanent currency for ascension upgrades
   totalHCEarned: number;                     // Lifetime HC earned (for display)
   ownedAscensionNodeIds: string[];           // Purchased ascension tree nodes
@@ -1988,6 +1988,9 @@ export function shouldUnlockAchievement(achievement: Achievement, state: GameSta
 // =====================
 // ASCENSION TREE (Heavenly Upgrade System — prestige 10+)
 // =====================
+
+/** Yates $ required per 1 Heavenly Chip from money on prestige (after 10th). */
+export const YATES_DOLLARS_PER_HEAVENLY_CHIP = 8_000_000_000_000; // 8T = 1 HC
 
 export type AscensionPath = 'money' | 'damage' | 'clickSpeed' | 'building' | 'antimatter' | 'prism' | 'bank' | 'wizardA' | 'wizardB' | 'traderA' | 'traderB' | 'afkDuration' | 'afkProduction' | 'trinkets' | 'luck' | 'drops' | 'origin';
 

@@ -11,6 +11,7 @@ import {
   getPrestigePickaxeRequirement,
   getPrestigeMoneyRequirement,
   getPurchasePriceMultiplier,
+  YATES_DOLLARS_PER_HEAVENLY_CHIP,
 } from '@/types/game';
 import { ROCKS, PICKAXES } from '@/lib/gameData';
 
@@ -100,7 +101,7 @@ export default function PrestigeButton() {
       return 'Heavenly chips: +1 (Ascension tree opens).';
     }
     const fromGems = Math.floor((gameState.gems || 0) / 25);
-    const fromMoney = Math.floor(gameState.yatesDollars / 1_000_000_000_000);
+    const fromMoney = Math.floor(gameState.yatesDollars / YATES_DOLLARS_PER_HEAVENLY_CHIP);
     return `Heavenly chips: +${fromGems + fromMoney} (${fromGems} from gems · ${fromMoney} from $).`;
   }, [nextPrestigeNum, gameState.gems, gameState.yatesDollars]);
 
@@ -153,7 +154,7 @@ export default function PrestigeButton() {
         hcPreview = 1;
       } else {
         const hcFromGems = Math.floor((gameState.gems || 0) / 25);
-        const hcFromMoney = Math.floor(gameState.yatesDollars / 1_000_000_000_000);
+        const hcFromMoney = Math.floor(gameState.yatesDollars / YATES_DOLLARS_PER_HEAVENLY_CHIP);
         hcPreview = hcFromGems + hcFromMoney;
       }
     }
@@ -236,7 +237,7 @@ export default function PrestigeButton() {
             </div>
             <div className="flex justify-between text-xs">
               <span className="text-gray-400">From Money:</span>
-              <span className="text-yellow-300">+{gameState.prestigeCount + 1 === 10 ? 1 : Math.floor(gameState.yatesDollars / 1e12)} HC</span>
+              <span className="text-yellow-300">+{gameState.prestigeCount + 1 === 10 ? 1 : Math.floor(gameState.yatesDollars / YATES_DOLLARS_PER_HEAVENLY_CHIP)} HC</span>
             </div>
             <div className="text-center text-yellow-400 text-xs mt-1">The Ascension Tree will open after prestige!</div>
           </div>

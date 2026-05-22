@@ -12,6 +12,7 @@ import {
   PRESTIGE_TOKENS_PER_PRESTIGE,
   YATES_ACCOUNT_ID,
   D1_PICKAXE_ID,
+  YATES_DOLLARS_PER_HEAVENLY_CHIP,
 } from '@/types/game';
 
 export function applySingleForcedPrestige(prev: GameState, userId: string | null): GameState {
@@ -106,7 +107,7 @@ export function applySingleForcedPrestige(prev: GameState, userId: string | null
     } else {
       hcFromGems = Math.floor((prev.gems || 0) / 25);
       newGems = (prev.gems || 0) % 25;
-      hcFromMoney = Math.floor(prev.yatesDollars / 1_000_000_000_000);
+      hcFromMoney = Math.floor(prev.yatesDollars / YATES_DOLLARS_PER_HEAVENLY_CHIP);
     }
   }
   const totalNewHC = hcFromGems + hcFromMoney;

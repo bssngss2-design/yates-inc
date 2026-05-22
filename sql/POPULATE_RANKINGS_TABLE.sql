@@ -23,30 +23,28 @@ active_period AS (
   SELECT id as period_id, period_start, period_end FROM ensure_period
   WHERE NOT EXISTS (SELECT 1 FROM current_period)
 ),
--- Clean game data - filter out NaN, Infinity, and out-of-range values
+-- Clamp huge game stats to BIGINT/INT range (Postgres has no isfinite() for numeric)
 clean_game_data AS (
   SELECT 
     ugd.user_id,
     ugd.user_type,
     ugd.username,
-    CASE 
-      WHEN ugd.total_money_earned IS NULL OR NOT isfinite(ugd.total_money_earned::numeric) THEN 0::BIGINT
-      WHEN ugd.total_money_earned > 9223372036854775807 THEN 9223372036854775807::BIGINT -- Max BIGINT
-      WHEN ugd.total_money_earned < -9223372036854775808 THEN -9223372036854775808::BIGINT -- Min BIGINT
-      ELSE ugd.total_money_earned::BIGINT
-    END as safe_money,
-    CASE 
-      WHEN ugd.fastest_prestige_time IS NULL OR NOT isfinite(ugd.fastest_prestige_time::numeric) THEN NULL::BIGINT
-      WHEN ugd.fastest_prestige_time > 9223372036854775807 THEN 9223372036854775807::BIGINT
-      WHEN ugd.fastest_prestige_time < 0 THEN NULL::BIGINT
-      ELSE ugd.fastest_prestige_time::BIGINT
-    END as safe_speed,
-    CASE 
-      WHEN ugd.prestige_count IS NULL OR NOT isfinite(ugd.prestige_count::numeric) THEN 0::INTEGER
-      WHEN ugd.prestige_count > 2147483647 THEN 2147483647::INTEGER -- Max INT
-      WHEN ugd.prestige_count < 0 THEN 0::INTEGER
-      ELSE ugd.prestige_count::INTEGER
-    END as safe_prestiges
+    LEAST(
+      GREATEST(COALESCE(ugd.total_money_earned::numeric, 0), 0),
+      9223372036854775807::numeric
+    )::bigint AS safe_money,
+    CASE
+      WHEN ugd.fastest_prestige_time IS NULL THEN NULL::bigint
+      WHEN ugd.fastest_prestige_time::numeric <= 0 THEN NULL::bigint
+      ELSE LEAST(
+        ugd.fastest_prestige_time::numeric,
+        9223372036854775807::numeric
+      )::bigint
+    END AS safe_speed,
+    LEAST(
+      GREATEST(COALESCE(ugd.prestige_count::numeric, 0), 0),
+      2147483647::numeric
+    )::integer AS safe_prestiges
   FROM user_game_data ugd
   WHERE ugd.username IS NOT NULL
 )

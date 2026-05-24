@@ -223,6 +223,34 @@ function stripUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
   return result as Partial<T>;
 }
 
+function isRetryableSaveError(error: { message?: string } | null): boolean {
+  const msg = error?.message || '';
+  return msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('Load failed');
+}
+
+async function upsertGameDataWithRetry(
+  tableName: string,
+  fullData: Record<string, unknown>,
+  maxAttempts = 3,
+): Promise<{ error: { message: string; details?: string; hint?: string; code?: string } | null }> {
+  let lastError: { message: string; details?: string; hint?: string; code?: string } | null = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const { error } = await supabase
+      .from(tableName)
+      .upsert(fullData, { onConflict: 'user_id' });
+
+    if (!error) return { error: null };
+
+    lastError = error;
+    if (!isRetryableSaveError(error) || attempt === maxAttempts) {
+      return { error };
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+  }
+  return { error: lastError };
+}
+
 // Save/update user game data to Supabase
 export async function saveUserGameData(data: Partial<UserGameData> & { user_id: string; user_type: 'employee' | 'client' }, versionAtCallTime?: number, isHardMode: boolean = false): Promise<boolean> {
   try {
@@ -319,9 +347,7 @@ export async function saveUserGameData(data: Partial<UserGameData> & { user_id: 
 
     console.log(`📤 SUPABASE SAVE (${resolvedHard ? 'HARD' : 'normal'}):`, { prestige: data.prestige_count, clicks: data.total_clicks, dollars: data.yates_dollars });
     
-    const { error } = await supabase
-      .from(tableName)
-      .upsert(fullData, { onConflict: 'user_id' });
+    const { error } = await upsertGameDataWithRetry(tableName, fullData as Record<string, unknown>);
 
     if (error) {
       console.error('❌ SUPABASE SAVE FAILED:', error.message, error.details, error.hint);

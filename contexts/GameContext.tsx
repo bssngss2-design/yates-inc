@@ -894,6 +894,10 @@ export function GameProvider({ children, isHardMode = false }: GameProviderProps
                   const mergedOwned = new Set([
                     ...(prev.ownedTrinketIds || []),
                     ...(supabaseData.owned_trinket_ids || []),
+                    ...(prev.ownedRelicIds || []),
+                    ...(prev.ownedTalismanIds || []),
+                    ...(supabaseData.owned_relic_ids || []),
+                    ...(supabaseData.owned_talisman_ids || []),
                   ]);
                   return [
                     ...new Set([

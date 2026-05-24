@@ -8,6 +8,8 @@ import { useGame } from '@/contexts/GameContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { BossItem, BossItemSlot, RARITY_HEX, TAB_FILTERS, BOSS_ITEMS, AcquisitionGate, getItemById } from '@/lib/bossItems';
 import BossStoreOverlay from '@/components/boss/BossStoreOverlay';
+import InventoryFullModal from '@/components/boss/InventoryFullModal';
+import LoadoutConfirmScreen from '@/components/boss/LoadoutConfirmScreen';
 import { TRINKETS, YATES_ACCOUNT_ID } from '@/types/game';
 
 // Index unlock requirements
@@ -97,6 +99,9 @@ export default function BossesPage() {
 
     const [showNoAccountPopup, setShowNoAccountPopup] = useState(false);
     const [showStore, setShowStore] = useState(false);
+    const [showInventoryFull, setShowInventoryFull] = useState(false);
+    const [showLoadoutConfirm, setShowLoadoutConfirm] = useState(false);
+    const [fightWithFullInventory, setFightWithFullInventory] = useState(false);
     const [tab, setTab] = useState<Tab>('All');
     const [search, setSearch] = useState('');
     const [bossDropdownOpen, setBossDropdownOpen] = useState(false);
@@ -231,11 +236,17 @@ export default function BossesPage() {
 
     const totalSlots = BOSS_INVENTORY_MAX; // 45
     const onPlay = () => {
+        setFightWithFullInventory(false);
         if (isFull) {
-            // TODO: full-modal in Phase 2 — for now just block + alert
-            alert('Inventory full (45/45). Sell something or you\'ll lose drops.');
+            setShowInventoryFull(true);
             return;
         }
+        setShowLoadoutConfirm(true);
+    };
+
+    const enterArena = () => {
+        setShowLoadoutConfirm(false);
+        setShowInventoryFull(false);
         router.push('/bosses/megaknight');
     };
 
@@ -608,9 +619,46 @@ export default function BossesPage() {
                 </div>
             </div>
 
+            {/* ===== INVENTORY FULL MODAL ===== */}
+            {showInventoryFull && (
+                <InventoryFullModal
+                    onClose={() => setShowInventoryFull(false)}
+                    onManageInventory={() => setShowInventoryFull(false)}
+                    onFightAnyway={() => {
+                        setShowInventoryFull(false);
+                        setFightWithFullInventory(true);
+                        setShowLoadoutConfirm(true);
+                    }}
+                />
+            )}
+
+            {/* ===== LOADOUT CONFIRM ===== */}
+            {showLoadoutConfirm && (
+                <LoadoutConfirmScreen
+                    bossName="Meganut"
+                    bossSubtitle="(MK) — The First Boss"
+                    loadoutItems={loadoutItems}
+                    computedStats={computedStats}
+                    mkHpMin={hpRange.min}
+                    mkHpMax={hpRange.max}
+                    inventoryFull={fightWithFullInventory || isFull}
+                    onConfirm={enterArena}
+                    onCancel={() => {
+                        setShowLoadoutConfirm(false);
+                        setFightWithFullInventory(false);
+                    }}
+                />
+            )}
+
             {/* ===== BOSS STORE OVERLAY ===== */}
             {showStore && (
-                <BossStoreOverlay onClose={() => setShowStore(false)} />
+                <BossStoreOverlay
+                    onClose={() => setShowStore(false)}
+                    onInventoryFull={() => {
+                        setShowStore(false);
+                        setShowInventoryFull(true);
+                    }}
+                />
             )}
 
             {/* ===== INDEX OVERLAY ===== */}

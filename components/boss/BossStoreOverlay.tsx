@@ -266,9 +266,11 @@ interface Props {
     onClose: () => void;
     /** Item IDs the player has already discovered as hidden (e.g. infinity_gauntlet found in Settings) */
     discoveredHidden?: Set<string>;
+    /** Called when a purchase fails because inventory is 45/45 */
+    onInventoryFull?: () => void;
 }
 
-export default function BossStoreOverlay({ onClose, discoveredHidden = new Set() }: Props) {
+export default function BossStoreOverlay({ onClose, discoveredHidden = new Set(), onInventoryFull }: Props) {
     const { bc, spendBC, addItem, inventory } = useBoss();
     const [activeTab, setActiveTab] = useState<StoreTab>('All');
     const [lastPurchase, setLastPurchase] = useState<{ name: string; price: number } | null>(null);
@@ -292,11 +294,12 @@ export default function BossStoreOverlay({ onClose, discoveredHidden = new Set()
         const added = addItem(item.id);
         if (!added) {
             setErrorMsg('Inventory is full (45/45).');
+            onInventoryFull?.();
             return;
         }
         spendBC(price);
         setLastPurchase({ name: item.name, price });
-    }, [bc, ownedSet, addItem, spendBC]);
+    }, [bc, ownedSet, addItem, spendBC, onInventoryFull]);
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
